@@ -1,0 +1,10 @@
+__pycache__/
+.pytest_cache/
+.venv/
+data/
+*.pyc
+.env
+.env.*
+.cloudflared/
+.streamlit/secrets.toml
+*.pem

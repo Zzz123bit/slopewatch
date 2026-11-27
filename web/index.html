@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>坡镜智安 · 远程巡检</title>
+  <style>
+    :root { color-scheme: light; --ink:#162f26; --muted:#52675d; --line:#ced8ce; --green:#22543e; --paper:#fffefa; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:#f0f3ed; color:var(--ink); font:16px/1.55 "Inter","Microsoft YaHei",system-ui,sans-serif; }
+    header { background:#163d30; color:#fff; }
+    header > div, main { max-width:1060px; margin:auto; padding:0 26px; }
+    header > div { display:flex; align-items:center; justify-content:space-between; min-height:68px; }
+    .brand { display:flex; gap:12px; align-items:center; font-weight:700; letter-spacing:.08em; font-size:21px; }
+    .mark { width:34px; height:34px; border:1px solid #a7c8ad; border-radius:8px; background:repeating-linear-gradient(145deg,transparent 0 5px,#97c49f 6px 7px,transparent 8px 12px); }
+    header a { color:#e2ebdf; text-underline-offset:.25em; font-size:14px; }
+    main { padding-top:30px; padding-bottom:54px; }
+    h1 { margin:0 0 20px; font-size:clamp(26px,4vw,40px); font-weight:700; letter-spacing:-.035em; }
+    h2 { margin:0; font-size:19px; }
+    .workspace { display:grid; grid-template-columns:minmax(0,1.07fr) minmax(0,.93fr); gap:18px; align-items:start; }
+    .card { border:1px solid var(--line); border-radius:14px; background:var(--paper); padding:24px; }
+    .access { display:grid; align-items:center; grid-template-columns:minmax(0,.88fr) minmax(0,1.12fr); gap:18px; margin-bottom:18px; }
+    .control { display:grid; gap:6px; align-content:start; }
+    label, legend { font-size:14px; font-weight:650; }
+    .access label { font-size:18px; }
+    p { margin:0; }
+    .hint { color:var(--muted); font-size:14px; }
+    input,select,button { font:inherit; color:inherit; }
+    input:not([type=radio]),select { width:100%; min-width:0; background:#fff; padding:9px 11px; border:1px solid #9aab9f; border-radius:7px; min-height:42px; }
+    input[type=file] { padding:5px; font-size:13px; }
+    ::file-selector-button { color:var(--green); background:#eaf1e8; border:none; padding:6px 8px; border-radius:4px; margin-right:6px; }
+    input:focus-visible,select:focus-visible,button:focus-visible,a:focus-visible { outline:3px solid #438eaf; outline-offset:2px; }
+    fieldset { border:0; margin:0; padding:0; min-width:0; }
+    .modes { display:flex; margin:16px 0 10px; padding:4px; background:#e9eee5; border-radius:8px; }
+    .modes label { position:relative; flex:1; padding:7px 5px; text-align:center; cursor:pointer; border:1px solid transparent; border-radius:6px; color:#43574d; }
+    .modes label:has(input:checked) { background:var(--paper); border-color:#c2cfc1; color:var(--ink); }
+    .modes label:has(input:focus-visible) { outline:3px solid #438eaf; }
+    .modes input,.sr { position:absolute; width:1px; height:1px; clip-path:inset(50%); overflow:hidden; }
+    .fields { display:grid; gap:14px; margin-top:16px; }
+    .pair { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    [hidden] { display:none!important; }
+    .main-button,.file-button,.retry { cursor:pointer; border:1px solid transparent; border-radius:7px; font-weight:650; }
+    .main-button { background:var(--green); color:#fff; min-height:44px; padding:10px 18px; margin-top:22px; width:100%; }
+    .main-button:hover { background:#183e2d; }
+    button:disabled { opacity:.58; cursor:wait; }
+    .result-head { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+    .state { color:#365440; background:#e6eee1; padding:3px 9px; border-radius:5px; font-size:13px; }
+    .state[data-error=true] { color:#782e1d; background:#f6e2d8; }
+    #message { margin-top:14px; overflow-wrap:anywhere; }
+    #job-label { margin-top:9px; font-size:12px; overflow-wrap:anywhere; }
+    code { font-family:"IBM Plex Mono",Consolas,monospace; }
+    progress { appearance:none; width:100%; margin-top:12px; height:6px; border:0; border-radius:4px; overflow:hidden; background:#dce6d8; }
+    progress::-webkit-progress-bar { background:#dce6d8; }
+    progress::-webkit-progress-value { background:#568267; }
+    progress::-moz-progress-bar { background:#568267; }
+    #outcome { border-top:1px solid var(--line); margin-top:18px; padding-top:15px; }
+    dl { display:grid; grid-template-columns:1fr 1fr; gap:16px 10px; margin:0 0 18px; }
+    dt { color:var(--muted); font-size:13px; }
+    dd { margin:3px 0 0; font-size:22px; font-weight:650; font-variant-numeric:tabular-nums; }
+    dd small { font-size:13px; font-weight:500; margin-left:4px; }
+    .downloads { display:flex; flex-wrap:wrap; gap:8px; }
+    .file-button,.retry { color:var(--green); background:#fff; border-color:#b1c3b3; padding:7px 10px; font-size:13px; }
+    .file-button:hover,.retry:hover { background:#edf3e9; }
+    .retry { margin-top:10px; }
+    #download-error { margin-top:8px; color:#782e1d; }
+    @media (max-width:720px) {
+      header > div,main { padding-left:16px; padding-right:16px; }
+      header > div { min-height:54px; }
+      main { padding-top:20px; }
+      .workspace,.access { grid-template-columns:1fr; gap:12px; }
+      .card { padding:18px; }
+    }
+    @media (max-width:390px) { .pair { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <header><div><span class="brand"><span aria-hidden="true" class="mark"></span>坡镜智安</span><a href="/docs">API 文档</a></div></header>
+  <main>
+    <h1>坡面变化分析</h1>
+    <noscript>请启用浏览器的 JavaScript，以提交任务并查看分析结果。</noscript>
+    <form id="job-form" method="post" autocomplete="off">
+      <section class="access card" aria-label="身份验证">
+        <div><label for="token">访问令牌</label><p id="token-hint" class="hint">由演示负责人提供，仅在当前页面使用。</p></div>
+        <input type="password" id="token" placeholder="粘贴访问令牌" autocomplete="off" autocapitalize="none" spellcheck="false" required aria-describedby="token-hint">
+      </section>
+      <div class="workspace">
+        <section class="card" aria-labelledby="task-heading">
+          <h2 id="task-heading">新建任务</h2>
+          <fieldset id="inputs">
+            <legend class="sr">任务输入</legend>
+            <div class="modes">
+              <label><input type="radio" name="mode" value="demo" checked>合成样例</label>
+              <label><input type="radio" name="mode" value="compare">上传点云</label>
+            </div>
+            <p class="hint" id="mode-hint">用合成的降雨前后坡面运行一次分析。</p>
+            <fieldset id="compare-fields" class="fields" disabled hidden>
+              <legend class="sr">点云与测量参数</legend>
+              <label class="control">基准时相点云<input type="file" name="before" accept=".ply,.xyz,.txt,.csv" required></label>
+              <label class="control">变化后时相点云<input type="file" name="after" accept=".ply,.xyz,.txt,.csv" required></label>
+              <div class="pair">
+                <label class="control">点云坐标单位<select name="unit"><option value="mm">毫米（mm）</option><option value="m">米（m）</option></select></label>
+                <label class="control">网格间距（mm）<input type="number" name="grid_step_mm" min="0" max="100" step="any" value="2" required></label>
+                <label class="control">变化阈值（mm）<input type="number" name="erosion_threshold_mm" min="0" max="100" step="any" value="3" required></label>
+                <label class="control">时相间隔（h）<input type="number" name="elapsed_hours" min="0" max="1000000" step="any" value="1" required></label>
+              </div>
+            </fieldset>
+          </fieldset>
+          <button id="submit" class="main-button" type="submit">运行样例</button>
+        </section>
+        <section class="card" aria-labelledby="result-heading">
+          <div class="result-head"><h2 id="result-heading">分析结果</h2><span class="state" id="state">待提交</span></div>
+          <p class="hint" id="message" role="status" aria-live="polite">任务完成后可查看冲淤指标，下载数据与巡检报告。</p>
+          <p class="hint" id="job-label" hidden>任务 ID <code id="job-id"></code></p>
+          <progress id="progress" max="100" value="0" aria-label="任务进度" hidden></progress>
+          <button type="button" id="retry" class="retry" hidden>重新查询此任务</button>
+          <div id="outcome" hidden>
+            <dl id="metrics"></dl>
+            <div class="downloads" id="downloads" aria-label="下载分析文件"></div>
+            <p class="hint" id="download-error" role="alert"></p>
+          </div>
+        </section>
+      </div>
+    </form>
+  </main>
+  <script>
+    'use strict';
+    const get = id => document.getElementById(id);
+    const form = get('job-form');
+    const tokenInput = get('token');
+    const compareFields = get('compare-fields');
+    const submitButton = get('submit');
+    const progress = get('progress');
+    let currentJob = null;
+    const isCompare = () => form.elements.mode.value === 'compare';
+    const metricSpecs = [
+      ['阈值以上冲刷体积','erosion_volume_l','L'],
+      ['阈值以上堆积体积','deposition_volume_l','L'],
+      ['最大冲刷深度','max_erosion_depth_mm','mm'],
+      ['变化面积','changed_area_m2','m²']
+    ];
+    const fileLabels = {'change.csv':'高程差 CSV','metrics.json':'指标 JSON','report.pdf':'巡检 PDF'};
+    function updateMode() {
+      compareFields.disabled = !isCompare();
+      compareFields.hidden = !isCompare();
+      get('mode-hint').textContent = isCompare()
+        ? '两期点云须已统一尺度、对齐坐标。支持 PLY、XYZ、TXT 和 CSV。'
+        : '用合成的降雨前后坡面运行一次分析。';
+      submitButton.textContent = isCompare() ? '提交点云分析' : '运行样例';
+    }
+    form.elements.mode.forEach(radio => radio.addEventListener('change', updateMode));
+    const gridInput = form.elements.grid_step_mm;
+    gridInput.addEventListener('input', () => gridInput.setCustomValidity(''));
+    window.addEventListener('pagehide', () => { tokenInput.value = ''; });
+    function setBusy(busy) {
+      submitButton.disabled = busy;
+      get('inputs').disabled = busy;
+      get('retry').disabled = busy;
+    }
+    function setStatus(label, message, error = false) {
+      get('state').textContent = label;
+      get('state').dataset.error = String(error);
+      if (get('message').textContent !== message) get('message').textContent = message;
+    }
+    async function api(path, options = {}) {
+      const token = tokenInput.value.trim();
+      if (!token) throw new Error('请先填写访问令牌。');
+      let response;
+      try {
+        response = await fetch('/api/v1/' + path, {
+          ...options, headers: {Authorization: 'Bearer ' + token},
+          mode: 'same-origin', credentials: 'omit', redirect: 'error', cache: 'no-store'
+        });
+      } catch {
+        throw new Error('连接中断，请检查网络和演示主机。');
+      }
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) throw new Error('身份验证失败，请核对访问令牌。');
+        if (response.status === 413) throw new Error('文件超过上传限制，请减少点数后重新上传。');
+        let detail;
+        try { detail = (await response.json()).detail; } catch { /* The tunnel may return HTML. */ }
+        if (typeof detail === 'string') throw new Error(detail);
+        if (response.status === 422) throw new Error('输入参数不符合要求，请检查文件格式和测量参数。');
+        throw new Error('请求失败（HTTP ' + response.status + '）。');
+      }
+      return response;
+    }
+    function jobPath(id) { return 'jobs/' + encodeURIComponent(id); }
+    async function download(jobId, name, button) {
+      button.disabled = true;
+      get('download-error').textContent = '';
+      try {
+        const response = await api(jobPath(jobId) + '/files/' + encodeURIComponent(name));
+        const url = URL.createObjectURL(await response.blob());
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = name;
+        document.body.append(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 30000);
+      } catch (error) {
+        if (currentJob === jobId) get('download-error').textContent = error.message;
+      } finally { button.disabled = false; }
+    }
+    function showResult(result, jobId) {
+      const metrics = get('metrics');
+      const downloads = get('downloads');
+      metrics.replaceChildren();
+      downloads.replaceChildren();
+      for (const [label, key, unit] of metricSpecs) {
+        const value = result.metrics?.[key];
+        if (!Number.isFinite(value)) continue;
+        const group = document.createElement('div');
+        const title = document.createElement('dt');
+        const reading = document.createElement('dd');
+        const suffix = document.createElement('small');
+        title.textContent = label;
+        reading.textContent = value.toLocaleString('zh-CN', {maximumFractionDigits:6});
+        suffix.textContent = unit;
+        reading.append(suffix);
+        group.append(title, reading);
+        metrics.append(group);
+      }
+      for (const [name, label] of Object.entries(fileLabels)) {
+        if (!result.files?.includes(name)) continue;
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'file-button';
+        button.textContent = label;
+        button.addEventListener('click', () => download(jobId, name, button));
+        downloads.append(button);
+      }
+      get('outcome').hidden = false;
+    }
+    async function followJob() {
+      get('retry').hidden = true;
+      try {
+        while (true) {
+          const path = jobPath(currentJob);
+          const job = await (await api(path)).json();
+          progress.hidden = false;
+          progress.value = Number.isFinite(job.progress) ? job.progress : 0;
+          if (job.status === 'failed') {
+            setStatus('任务失败', job.error || '计算失败，请检查输入并重新提交。', true);
+            return;
+          }
+          if (job.status === 'complete') {
+            const result = await (await api(path + '/result')).json();
+            showResult(result, currentJob);
+            setStatus('已完成', '分析完成。');
+            return;
+          }
+          if (job.status !== 'queued' && job.status !== 'running') throw new Error('服务返回了未知的任务状态。');
+          setStatus(job.status === 'queued' ? '排队中' : '计算中', job.message || '等待分析结果…');
+          await new Promise(resolve => setTimeout(resolve, 1500));
+        }
+      } catch (error) {
+        setStatus('查询中断', error.message, true);
+        get('retry').hidden = false;
+      }
+    }
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      if (submitButton.disabled) return;
+      if (isCompare() && gridInput.valueAsNumber <= 0) {
+        gridInput.setCustomValidity('网格间距须大于零。');
+        gridInput.reportValidity();
+        return;
+      }
+      const compare = isCompare();
+      const options = {method:'POST'};
+      if (compare) {
+        const body = new FormData(form);
+        body.delete('mode');
+        options.body = body;
+      }
+      currentJob = null;
+      get('outcome').hidden = true;
+      get('retry').hidden = true;
+      get('job-label').hidden = true;
+      get('download-error').textContent = '';
+      progress.hidden = true;
+      setBusy(true);
+      setStatus('提交中', compare ? '正在上传两期点云…' : '正在提交样例…');
+      try {
+        const job = await (await api(compare ? 'jobs/compare' : 'jobs/demo', options)).json();
+        if (typeof job.job_id !== 'string' || !job.job_id) throw new Error('服务未返回任务 ID。');
+        currentJob = job.job_id;
+        get('job-id').textContent = currentJob;
+        get('job-label').hidden = false;
+        await followJob();
+      } catch (error) {
+        setStatus('提交失败', error.message, true);
+      } finally { setBusy(false); }
+    });
+    get('retry').addEventListener('click', async () => {
+      if (!currentJob) return;
+      setBusy(true);
+      try { await followJob(); } finally { setBusy(false); }
+    });
+    updateMode();
+  </script>
+</body>
+</html>
