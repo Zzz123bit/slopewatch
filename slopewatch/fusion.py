@@ -1,4 +1,4 @@
-"""Fuse post-event semantic observations with DoD in the calibrated XY frame."""
+﻿"""Fuse post-event semantic observations with DoD in the calibrated XY frame."""
 
 from __future__ import annotations
 
@@ -275,7 +275,7 @@ def analyze_fusion(comparison: Comparison, labels=None, *, source="manual", thre
         method = ("8 邻域内至少 4 个冲刷格，主轴长与面积等效宽之比 ≥3 时列为冲沟候选。"
                   "较紧凑的冲刷斑块至少 9 格且至少 3 格在堆积区 2 格邻域内时列为坍塌候选，需现场复核。")
     else:
-        if source not in {"manual", "model", "synthetic"}:
+        if source not in {"manual", "model", "synthetic", "weak"}:
             raise ValueError("请指定掩码来源 manual、model 或 synthetic")
         labels = _check_ids(labels)
         if labels.shape != valid.shape:
@@ -378,3 +378,4 @@ def atlas_png(comparison: Comparison, result: FusionResult) -> bytes:
     output = io.BytesIO()
     canvas.save(output, format="PNG")
     return output.getvalue()
+

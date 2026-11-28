@@ -5,6 +5,7 @@ import os
 import uuid
 
 import numpy as np
+from PIL import Image
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -23,6 +24,7 @@ from .report import build_report_pdf
 from .uploads import extract_image_archive
 from .vggt_recon import reconstruct_vggt
 from .visuals import render_dod_png, render_surface_png, surface_payload
+from .weak_labels import label_change, labels_to_rgb
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -192,7 +194,7 @@ def run_photo_job(
         diagnostics["photos"] = {"before": len(before_images), "after": len(after_images)}
         diagnostics["backend"] = "VGGT-1B (fp32 weights, bf16 autocast)"
 
-        update_job(job_id, progress=93, message="生成三维坡面、冲淤图与报告")
+        update_job(job_id, progress=90, message="生成三维坡面、冲淤图与报告")
         report_metadata = {
             **metadata,
             "重建方式": "VGGT-1B 多视角重建",
@@ -213,14 +215,23 @@ def run_photo_job(
         (directory / "surface.json").write_text(
             json.dumps(surface_payload(comparison), ensure_ascii=False), encoding="utf-8"
         )
-        update_job(job_id, progress=93, message="语义分割与图谱融合")
-        semantic = {"source": "geometry", "detail": "未配置语义分割模型，按几何形态分类"}
+
+        update_job(job_id, progress=93, message="语义分割与地貌规则标注")
+        semantic = {"source": "weak", "detail": "使用地貌规则自动标签"}
         labels_grid = None
         try:
             segmenter = load_segmenter()
         except Exception as error:  # noqa: BLE001 - a broken model must not fail the job
             segmenter = None
-            semantic["detail"] = f"分割模型不可用：{error}"
+            semantic["detail"] = f"分割模型不可用，使用地貌规则标签：{error}"
+
+        weak = label_change(comparison)
+        (directory / "weak_labels.json").write_text(
+            json.dumps({"stats": weak.stats, "regions": weak.regions}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        Image.fromarray(labels_to_rgb(weak.labels)).save(directory / "weak_labels.png")
+
         if segmenter is not None:
             try:
                 masks = [segmenter(path) for path in after_cloud.image_paths]
@@ -244,11 +255,12 @@ def run_photo_job(
                     "coverage": fusion.summary.get("coverage", {}),
                     "classes": fusion.summary.get("classes", {}),
                 }
-            except Exception as error:  # noqa: BLE001 - fall back to geometric labels
-                semantic = {"source": "geometry", "detail": f"语义融合失败，回退几何分类：{error}"}
-                fusion = analyze_fusion(comparison)
+            except Exception as error:  # noqa: BLE001 - fall back to rule labels
+                semantic = {"source": "weak", "detail": f"语义融合失败，改用规则标签：{error}"}
+                fusion = analyze_fusion(comparison, weak.labels, source="weak")
         else:
-            fusion = analyze_fusion(comparison)
+            fusion = analyze_fusion(comparison, weak.labels, source="weak")
+
         (directory / "fusion.json").write_text(
             json.dumps({"summary": fusion.summary, "semantic": semantic}, ensure_ascii=False, indent=2),
             encoding="utf-8",
@@ -266,6 +278,7 @@ def run_photo_job(
                 "metrics": comparison.metrics,
                 "gullies": comparison.gullies,
                 "semantic": semantic,
+                "weak_labels": weak.stats,
                 "diagnostics": {
                     "scale_calibrated": diagnostics["scale_calibrated"],
                     "similarity_scale": diagnostics["alignment"]["scale"],
@@ -282,6 +295,8 @@ def run_photo_job(
                     "diagnostics.json",
                     "fusion.json",
                     "atlas.png",
+                    "weak_labels.png",
+                    "weak_labels.json",
                     "photo_quality.json",
                 ],
             },

@@ -171,7 +171,25 @@ python scripts/annotate.py    --images data\real_photos --masks data\real_masks 
 python scripts/finetune_segmentation.py --images data\real_photos --masks data\real_masks --epochs 20
 ```
 
-类别定义、标注技巧、验收标准与常见问题见 **[docs/annotation_guide.md](docs/annotation_guide.md)**。微调后运行时会自动优先使用更新时间较新的 `models/segmentation.pt`，`/health` 的 `segmentation.backend` 会显示 `torch`；也可以改用 LabelMe 画多边形后运行 `scripts/labelme_to_masks.py` 转换。
+类别定义、标注技巧、验收标准与常见问题见 **[docs/annotation_guide.md](docs/annotation_guide.md)**。
+
+### 自监督（规则）标注与公开数据集
+
+如果人工标注来不及，可以直接用几何规则自动生成冲沟/坍塌标签：两期照片重建 → DoD → 形态判据（线状下切、长度/宽度/长宽比、邻近堆积）→ 三维标签 → 投影回各视角照片，得到可训练的“图 + 掩膜”。
+
+```powershell
+# 单场景：规则标签 + 投影 + 可选微调
+python scripts/self_train_segmentation.py --scene data\samples\synthetic_sem `
+  --out data\self_supervised\sem --max-views 4 --finetune-epochs 15
+```
+
+已下载三个 CC-BY-4.0 的公开滑坡分割数据集（Nepal / Italy / Japan，共 440 对图-掩膜）用于预训练与外部评测：
+
+```powershell
+python scripts/prepare_external_datasets.py
+```
+
+规则阈值、能自动标注的类别、实测结果与风险见 **[docs/WEAK_SUPERVISION.md](docs/WEAK_SUPERVISION.md)**。微调后运行时会自动优先使用更新时间较新的 `models/segmentation.pt`，`/health` 的 `segmentation.backend` 会显示 `torch`；也可以改用 LabelMe 画多边形后运行 `scripts/labelme_to_masks.py` 转换。
 
 ### 运行参数
 
