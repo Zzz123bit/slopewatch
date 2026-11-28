@@ -288,6 +288,24 @@ def plane_up_rotation(points: np.ndarray, trim: float = 0.9) -> np.ndarray:
     return _rotation_between(normal, np.array([0.0, 0.0, 1.0]))
 
 
+def transform_points_to_comparison(points: np.ndarray, diagnostics: dict) -> np.ndarray:
+    """Map raw VGGT points of the after epoch into the comparison frame."""
+    cloud = np.asarray(points, dtype=np.float64)
+    alignment = diagnostics["alignment"]
+    scale = float(alignment["scale"])
+    rotation = np.asarray(alignment["rotation"], dtype=np.float64)
+    translation = np.asarray(alignment["translation"], dtype=np.float64)
+    mapped = scale * (cloud @ rotation.T) + translation
+    mapped = mapped * float(diagnostics["scale_mm_per_unit"])
+    mapped = mapped @ np.asarray(diagnostics["plane_rotation"], dtype=np.float64).T
+    detrend = diagnostics.get("detrend") or {}
+    if detrend.get("applied"):
+        coefficients = detrend["plane_mm"]
+        mapped[..., 2] -= (coefficients[0] + coefficients[1] * mapped[..., 0]
+                           + coefficients[2] * mapped[..., 1])
+    return mapped
+
+
 def gravity_up_rotation(points: np.ndarray) -> np.ndarray:
     """Heuristic pose from a hand-held/drone capture: VGGT world Y points down.
 
@@ -391,6 +409,7 @@ def compare_reconstructions(
 
     diagnostics = {
         "detrend": detrend,
+        "plane_rotation": rotation.tolist(),
         "alignment": alignment,
         "scale_mm_per_unit": float(scale_mm_per_unit),
         "scale_calibrated": not np.isclose(scale_mm_per_unit, 1.0),

@@ -15,6 +15,7 @@ from slopewatch.jobs import (
     run_photo_job,
     run_reconstruction_job,
 )
+from slopewatch.fusion import segmentation_status
 from slopewatch.reconstruction import colmap_status
 from slopewatch.vggt_recon import vggt_status
 
@@ -40,7 +41,13 @@ def _read_upload(upload: UploadFile, limit: int = MAX_UPLOAD_BYTES) -> bytes:
 
 @app.get("/api/v1/health")
 def health():
-    return {"status": "ok", "service": "slopewatch", "colmap": colmap_status(), "vggt": vggt_status()}
+    return {
+        "status": "ok",
+        "service": "slopewatch",
+        "colmap": colmap_status(),
+        "vggt": vggt_status(),
+        "segmentation": segmentation_status(),
+    }
 
 
 @submissions.post("/api/v1/jobs/demo", status_code=202)

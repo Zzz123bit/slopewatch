@@ -8,3 +8,4 @@ data/
 .cloudflared/
 .streamlit/secrets.toml
 *.pem
+models/*.pt

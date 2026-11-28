@@ -32,6 +32,17 @@ RGB = {
     UNKNOWN: (153, 163, 167),
 }
 NO_DATA_COLOR = (39, 48, 54)
+DEFAULT_SEGMENTATION_MODEL = Path(__file__).resolve().parents[1] / "models" / "segmentation.onnx"
+
+
+def segmentation_status() -> dict:
+    """Report whether a five-class ONNX segmenter is available."""
+    configured = os.environ.get("SLOPEWATCH_SEGMENTATION_ONNX")
+    path = Path(configured) if configured else DEFAULT_SEGMENTATION_MODEL
+    if not path.is_file():
+        return {"available": False, "detail": f"未找到语义分割模型 {path.name}", "model": str(path)}
+    return {"available": True, "detail": "语义分割模型就绪", "model": str(path),
+            "size_mb": round(path.stat().st_size / 1e6, 2)}
 
 
 def _check_ids(labels: np.ndarray) -> np.ndarray:
@@ -59,9 +70,12 @@ def load_segmenter(model_path=None, *, input_size=None):
     ordered by class ID. Resize the image isotropically, pad with black, then
     bilinearly restore each logit channel before classification.
     """
-    model_path = model_path or os.environ.get("SLOPEWATCH_SEGMENTATION_ONNX")
-    if not model_path:
-        return None
+    configured = os.environ.get("SLOPEWATCH_SEGMENTATION_ONNX")
+    model_path = model_path or configured
+    if model_path is None:
+        if not DEFAULT_SEGMENTATION_MODEL.is_file():
+            return None
+        model_path = DEFAULT_SEGMENTATION_MODEL
     import cv2
 
     side = int(input_size or os.environ.get("SLOPEWATCH_SEGMENTATION_SIZE", "512"))

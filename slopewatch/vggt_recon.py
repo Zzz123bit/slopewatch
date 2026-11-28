@@ -1,16 +1,17 @@
 """Adapter for the official VGGT 1B checkpoint: multi-view photos -> coloured points.
 
 The checkpoint is loaded once per process and reused.  Inference is deliberately
-bounded (view count, output points) so a laptop GPU can serve a demo job.
+bounded (view count, output points) so a laptop GPU can serve a demo job.  Each
+reconstruction also keeps its per-view point maps and the exact geometry of the
+VGGT preprocessing, so semantic masks can be projected back onto the DEM grid.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import struct
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -20,6 +21,7 @@ DTYPE_ENV = "SLOPEWATCH_VGGT_DTYPE"
 DEVICE_ENV = "SLOPEWATCH_VGGT_DEVICE"
 DEFAULT_CHECKPOINT = Path(r"D:\models\VGGT-1B\model.safetensors")
 MAX_VIEWS = 24
+TARGET_WIDTH = 518
 _GPU_LOCK = threading.Lock()
 _MODEL_CACHE: dict = {"path": None, "model": None}
 
@@ -31,11 +33,45 @@ class VGGTError(RuntimeError):
 
 
 @dataclass
+class ViewMapping:
+    """How one upright source image was placed on VGGT's processed canvas."""
+
+    original_size: tuple[int, int]      # (width, height)
+    resized_size: tuple[int, int]       # after resizing width to 518
+    crop_y: int                         # centre crop applied when height > 518
+    canvas_size: tuple[int, int]        # (width, height) of the stacked batch
+    offset: tuple[int, int]             # (left, top) padding offset on the canvas
+
+    def map_mask(self, mask: np.ndarray) -> np.ndarray:
+        """Nearest-neighbour mask alignment, padded with 255 (unknown)."""
+        mask = np.asarray(mask)
+        if mask.ndim != 2 or mask.shape[::-1] != self.original_size:
+            raise ValueError("语义掩码尺寸与原始照片不一致")
+        width, height = self.resized_size
+        from PIL import Image
+
+        resized = np.asarray(
+            Image.fromarray(mask.astype(np.uint8, copy=False)).resize((width, height), Image.Resampling.NEAREST)
+        )
+        if self.crop_y:
+            resized = resized[self.crop_y:self.crop_y + TARGET_WIDTH]
+        canvas = np.full((self.canvas_size[1], self.canvas_size[0]), 255, dtype=np.uint8)
+        top, left = self.offset[1], self.offset[0]
+        canvas[top:top + resized.shape[0], left:left + resized.shape[1]] = resized
+        return canvas
+
+
+@dataclass
 class Reconstruction:
-    points: np.ndarray          # (N, 3) float64 in arbitrary VGGT units
-    colors: np.ndarray          # (N, 3) uint8
-    confidence: np.ndarray      # (N,) float32
+    points: np.ndarray                  # (N, 3) float64 in arbitrary VGGT units
+    colors: np.ndarray                  # (N, 3) uint8
+    confidence: np.ndarray              # (N,) float32
     stats: dict
+    image_paths: list[Path] = field(default_factory=list)
+    view_points: list = field(default_factory=list)       # list of (H, W, 3) float32
+    view_confidence: list = field(default_factory=list)   # list of (H, W) float32
+    view_rgb: list = field(default_factory=list)          # list of (H, W, 3) uint8
+    view_mappings: list = field(default_factory=list)
 
 
 def _safetensors_complete(path: Path) -> bool:
@@ -152,6 +188,31 @@ def _select_views(paths: list[Path], max_views: int) -> list[Path]:
     return [paths[i] for i in sorted(set(indices.tolist()))]
 
 
+def _view_mappings(paths: list[Path], canvas_height: int) -> list[ViewMapping]:
+    """Reproduce ``vggt.utils.load_fn`` crop-mode geometry for each input."""
+    from PIL import Image
+
+    mappings = []
+    canvas_width = TARGET_WIDTH
+    for path in paths:
+        with Image.open(path) as image:
+            width, height = image.size
+        resized_height = max(14, round(height * (TARGET_WIDTH / width) / 14) * 14)
+        crop_y = (resized_height - TARGET_WIDTH) // 2 if resized_height > TARGET_WIDTH else 0
+        used_height = min(resized_height, TARGET_WIDTH)
+        top = max(0, (canvas_height - used_height) // 2)
+        mappings.append(
+            ViewMapping(
+                original_size=(width, height),
+                resized_size=(TARGET_WIDTH, resized_height),
+                crop_y=crop_y,
+                canvas_size=(canvas_width, canvas_height),
+                offset=(0, top),
+            )
+        )
+    return mappings
+
+
 def reconstruct_vggt(
     image_paths,
     *,
@@ -188,7 +249,9 @@ def reconstruct_vggt(
     if progress:
         progress(15, f"预处理 {len(paths)} 张照片")
     try:
-        images = preprocess([str(path) for path in paths]).to(device)
+        images = preprocess([str(path) for path in paths])
+        mappings = _view_mappings(paths, int(images.shape[-2]))
+        images = images.to(device)
     except Exception as exc:  # noqa: BLE001
         raise VGGTError("preprocessing_failed", f"照片预处理失败：{exc}") from exc
 
@@ -216,7 +279,8 @@ def reconstruct_vggt(
     confidence = predictions["world_points_conf"][0].float().cpu().numpy()
     rgb = predictions["images"][0].permute(0, 2, 3, 1).float().cpu().numpy()
     del predictions
-    torch.cuda.empty_cache()
+    if device == "cuda":
+        torch.cuda.empty_cache()
 
     if points.ndim != 4 or points.shape[-1] != 3 or confidence.shape != points.shape[:3]:
         raise VGGTError("inference_failed", "VGGT 输出维度异常")
@@ -237,6 +301,7 @@ def reconstruct_vggt(
         flat_conf = flat_conf[::stride]
         flat_rgb = flat_rgb[::stride]
 
+    view_rgb = np.clip(rgb * 255.0, 0, 255).astype(np.uint8)
     stats = {
         "views": len(paths),
         "valid_pixels": int(valid.sum()),
@@ -246,4 +311,14 @@ def reconstruct_vggt(
         "image_size": [int(images.shape[-1]), int(images.shape[-2])],
         "checkpoint": checkpoint.name,
     }
-    return Reconstruction(flat_points, flat_rgb, flat_conf, stats)
+    return Reconstruction(
+        flat_points,
+        flat_rgb,
+        flat_conf,
+        stats,
+        image_paths=paths,
+        view_points=[view.astype(np.float32) for view in points],
+        view_confidence=[view.astype(np.float32) for view in confidence],
+        view_rgb=[view for view in view_rgb],
+        view_mappings=mappings,
+    )

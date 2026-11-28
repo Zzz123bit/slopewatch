@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import uuid
+
+import numpy as np
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -13,8 +15,8 @@ from .core import (
     load_point_cloud,
     make_demo_comparison,
 )
-from .fusion import analyze_fusion, atlas_png
-from .photogram import compare_reconstructions
+from .fusion import analyze_fusion, atlas_png, load_segmenter, project_label_views
+from .photogram import compare_reconstructions, transform_points_to_comparison
 from .quality import inspect_images
 from .reconstruction import reconstruct_with_colmap
 from .report import build_report_pdf
@@ -211,9 +213,45 @@ def run_photo_job(
         (directory / "surface.json").write_text(
             json.dumps(surface_payload(comparison), ensure_ascii=False), encoding="utf-8"
         )
-        fusion = analyze_fusion(comparison)
+        update_job(job_id, progress=93, message="语义分割与图谱融合")
+        semantic = {"source": "geometry", "detail": "未配置语义分割模型，按几何形态分类"}
+        labels_grid = None
+        try:
+            segmenter = load_segmenter()
+        except Exception as error:  # noqa: BLE001 - a broken model must not fail the job
+            segmenter = None
+            semantic["detail"] = f"分割模型不可用：{error}"
+        if segmenter is not None:
+            try:
+                masks = [segmenter(path) for path in after_cloud.image_paths]
+                views = []
+                threshold = float(after_cloud.stats["confidence_threshold"])
+                for points_view, confidence_view, mapping, mask in zip(
+                    after_cloud.view_points,
+                    after_cloud.view_confidence,
+                    after_cloud.view_mappings,
+                    masks,
+                ):
+                    grid_mask = mapping.map_mask(mask)
+                    metric = transform_points_to_comparison(points_view.reshape(-1, 3), diagnostics)
+                    keep = np.isfinite(metric).all(axis=1) & (confidence_view.reshape(-1) >= threshold)
+                    views.append((metric[keep], grid_mask.reshape(-1)[keep]))
+                labels_grid = project_label_views(comparison, views)
+                fusion = analyze_fusion(comparison, labels_grid, source="model")
+                semantic = {
+                    "source": "model",
+                    "detail": "五类语义分割 + 多视投票投影",
+                    "coverage": fusion.summary.get("coverage", {}),
+                    "classes": fusion.summary.get("classes", {}),
+                }
+            except Exception as error:  # noqa: BLE001 - fall back to geometric labels
+                semantic = {"source": "geometry", "detail": f"语义融合失败，回退几何分类：{error}"}
+                fusion = analyze_fusion(comparison)
+        else:
+            fusion = analyze_fusion(comparison)
         (directory / "fusion.json").write_text(
-            json.dumps({"summary": fusion.summary}, ensure_ascii=False, indent=2), encoding="utf-8"
+            json.dumps({"summary": fusion.summary, "semantic": semantic}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
         )
         (directory / "atlas.png").write_bytes(atlas_png(comparison, fusion))
         (directory / "diagnostics.json").write_text(
@@ -227,6 +265,7 @@ def run_photo_job(
             result={
                 "metrics": comparison.metrics,
                 "gullies": comparison.gullies,
+                "semantic": semantic,
                 "diagnostics": {
                     "scale_calibrated": diagnostics["scale_calibrated"],
                     "similarity_scale": diagnostics["alignment"]["scale"],

@@ -107,7 +107,7 @@ uvicorn api:app --host 127.0.0.1 --port 8001
 - **防护效果** 汇总不同试验组导出的指标 JSON，选择裸土对照并计算各防护组冲刷体积变化率。
 - **照片质检** 统计分辨率、清晰度、曝光和可见的 ArUco 标志数量。
 - **照片重建** 配置了 COLMAP 后可从单时相照片 ZIP 生成稠密 PLY 点云。
-- **照片对比（VGGT）** 上传雨前、雨后两组多视角照片，用 VGGT-1B 重建两期坡面，自动配准后输出三维坡面、冲淤图、指标与巡检 PDF。
+- **照片对比（VGGT）** 上传雨前、雨后两组多视角照片，用 VGGT-1B 重建两期坡面，自动配准、语义分割与融合后输出三维坡面、冲淤图、语义图谱、指标与巡检 PDF。
 
 ## 点云输入要求
 
@@ -147,7 +147,19 @@ $env:SLOPEWATCH_VGGT_CHECKPOINT = "D:\models\VGGT-1B\model.safetensors"
 |---|---|---|
 | ![surface](docs/surface.png) | ![dod](docs/dod.png) | ![atlas](docs/atlas.png) |
 
-`atlas.png` 由 `slopewatch/fusion.py` 生成：无掩码时按几何形态（细长冲刷斑块 → 冲沟候选，紧凑且邻近堆积的斑块 → 坍塌候选）自动分类，并统计防护区/对照区的单位面积冲刷量；若配置 `SLOPEWATCH_SEGMENTATION_ONNX`，可改用 5 类语义分割模型（0 其他、1 冲沟、2 坍塌、3 防护、4 未防护对照、255 未分类）。
+`atlas.png` 由 `slopewatch/fusion.py` 生成：默认使用内置 5 类语义分割模型（0 其他、1 冲沟、2 坍塌、3 防护、4 未防护对照、255 未分类），把各视角分割结果按 VGGT 预处理几何对齐后多视投票投影到 DEM 网格；模型缺失或推理失败时自动回退到几何形态分类（细长冲刷斑块 → 冲沟，紧凑且邻近堆积 → 坍塌）。
+
+### 语义分割模型
+
+`models/segmentation.onnx`（4.3 MB）是随仓库提供的轻量 U-Net：输入 256×256 RGB，输出 5 类 logits。验证集 **mIoU 0.72**，像素准确率 0.96，各类 IoU：其他 0.57、冲沟 0.46、坍塌 0.38、防护 0.97、对照 0.98。
+
+![分割示例](docs/segmentation_demo.png)
+
+训练数据由 `scripts/make_segmentation_dataset.py` 程序化生成（240 张随机坡度/冲沟/坍塌/防护垫/对照区的多视角渲染图与像素掩膜），`scripts/train_segmentation.py` 完成训练并导出 ONNX。
+
+注意：训练数据是合成渲染，**与真实照片存在域差距**；用于正式试验前，建议用真实照片标注 100–200 张做微调。重新训练需要 `numpy>=2`、`protobuf>=6` 与 `onnx`，与 Streamlit 运行环境（`protobuf<6`）冲突，请使用独立虚拟环境，导出后把 `models/segmentation.onnx` 拷回即可。
+
+健康检查 `GET /api/v1/health` 的 `segmentation` 字段会报告模型是否就绪。
 
 ### 运行参数
 

@@ -12,6 +12,7 @@ from fastapi.security import HTTPBearer
 
 from api import submissions
 from slopewatch.jobs import job_dir, read_job
+from slopewatch.fusion import segmentation_status
 from slopewatch.reconstruction import colmap_status
 from slopewatch.vggt_recon import vggt_status
 
@@ -83,6 +84,7 @@ def health():
         "service": "slopewatch",
         "colmap": {"available": colmap_status()["available"]},
         "vggt": vggt_status(),
+        "segmentation": segmentation_status(),
     }
 
 
