@@ -1,8 +1,35 @@
-# 坡镜智安 MVP
+﻿# 坡镜智安 SlopeWatch · 边坡视觉监测原型
 
-用于室内小型边坡试验的本地演示原型，包含合成样例、点云时相差分、照片质量检查、可选 COLMAP 重建和 FastAPI 任务接口。最新版本增加了**雨前/雨后多视角照片 → VGGT 三维重建 → 相似变换配准 → 冲淤量化 → 巡检报告**的完整链路。
+> 多视角照片 → VGGT 三维重建 → 两期配准 → 冲淤量化 + 语义图谱 → 巡检报告
+> 31 个自动化测试通过 · 文档版本 v1.0
 
 ![远程页面](docs/web_ui.png)
+
+## 文档导航
+
+| 文档 | 内容 | 适合谁看 |
+|---|---|---|
+| [README](README.md) | 安装、启动、接口、参数 | 所有人 |
+| [项目现状与计划](<docs/SlopeWatch_项目现状与计划.docx>) · [Markdown](docs/PROJECT_STATUS.md) | 端到端流程、完成度、P0/P1/P2、风险、运行手册 | 队友 / 指导老师 |
+| [技术选型与框架清单](<docs/SlopeWatch_技术选型与框架清单.docx>) · [Markdown](docs/TECH_STACK.md) | 每个模块的框架、模型、版本、理由与替代 | 答辩 / 评审 |
+| [标注与微调指南](docs/annotation_guide.md) | 类别定义、画笔工具、微调、验收 | 做数据的人 |
+| [自监督与公开数据集](docs/WEAK_SUPERVISION.md) | 规则阈值、自训练、3 个 CC-BY 数据集 | 算法 / 数据 |
+| [示例报告](docs/example_report.pdf) | 一次任务的 PDF 产出 | 评委 |
+
+## 仓库结构
+
+```text
+slopewatch/          核心库：重建、配准、量化、语义、报告
+api.py public_api.py 本机接口 / 带令牌的公网入口
+jobs.py              任务编排
+web/index.html       远程页面（原生 JS）
+app.py               Streamlit 桌面演示
+scripts/             标注、训练、合成数据、发布脚本
+models/              五类分割 ONNX / PyTorch 权重
+tests/               31 个自动化测试
+docs/                文档、示例图、示例 PDF
+data/                运行数据（本地，未入库）
+```
 
 ## 快速开始（照片对比）
 
@@ -233,4 +260,5 @@ python scripts/prepare_external_datasets.py
 ```powershell
 python -m pytest -q
 ```
+
 
