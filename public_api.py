@@ -13,6 +13,7 @@ from fastapi.security import HTTPBearer
 from api import submissions
 from slopewatch.jobs import job_dir, read_job
 from slopewatch.reconstruction import colmap_status
+from slopewatch.vggt_recon import vggt_status
 
 
 @asynccontextmanager
@@ -77,7 +78,12 @@ business.include_router(submissions)
 
 @business.get("/api/v1/health")
 def health():
-    return {"status": "ok", "service": "slopewatch", "colmap": {"available": colmap_status()["available"]}}
+    return {
+        "status": "ok",
+        "service": "slopewatch",
+        "colmap": {"available": colmap_status()["available"]},
+        "vggt": vggt_status(),
+    }
 
 
 def public_job(job_id: str) -> dict:
