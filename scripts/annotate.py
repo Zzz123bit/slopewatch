@@ -170,7 +170,10 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="只检查目录，不打开窗口")
     args = parser.parse_args()
 
-    images = sorted(p for p in Path(args.images).iterdir() if p.suffix.lower() in IMAGE_SUFFIXES)
+    source = Path(args.images)
+    if not source.is_dir():
+        raise SystemExit(f"找不到照片目录：{source}，请先放入照片。")
+    images = sorted(p for p in source.iterdir() if p.suffix.lower() in IMAGE_SUFFIXES)
     if not images:
         raise SystemExit(f"{args.images} 中没有图片")
     masks_dir = Path(args.masks)

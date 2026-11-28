@@ -26,7 +26,16 @@ def main():
     parser.add_argument("--overwrite", action="store_true", help="覆盖已有掩膜")
     args = parser.parse_args()
 
-    images = sorted(p for p in Path(args.images).iterdir() if p.suffix.lower() in IMAGE_SUFFIXES)
+    source = Path(args.images)
+    if not source.is_dir():
+        raise SystemExit(
+            f"找不到照片目录：{source}\n"
+            "请先新建目录并把照片复制进去，例如：\n"
+            "  mkdir data\\real_photos\n"
+            "  copy 你的照片 data\\real_photos\n"
+            "然后再运行本命令。"
+        )
+    images = sorted(p for p in source.iterdir() if p.suffix.lower() in IMAGE_SUFFIXES)
     if not images:
         raise SystemExit(f"{args.images} 中没有图片")
     masks_dir = Path(args.masks)
