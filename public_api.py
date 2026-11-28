@@ -36,7 +36,7 @@ app = FastAPI(
 PUBLIC_PATHS = {"/", "/livez", "/docs", "/docs/oauth2-redirect", "/redoc", "/openapi.json"}
 EXPORT_NAMES = {
     "change.csv", "metrics.json", "report.pdf", "photo_quality.json",
-    "surface.png", "dod.png", "surface.json", "diagnostics.json",
+    "surface.png", "dod.png", "surface.json", "diagnostics.json", "fusion.json", "atlas.png",
     "reconstruction/dense/fused.ply",
 }
 WEB_PAGE = Path(__file__).resolve().parent / "web" / "index.html"

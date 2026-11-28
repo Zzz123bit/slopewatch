@@ -195,6 +195,9 @@ def reconstruct_vggt(
     if progress:
         progress(30, "加载 VGGT 权重")
     model = _load_model(torch, load_safetensors, model_type, checkpoint, device)
+    model_device = next(model.parameters()).device
+    device = model_device.type
+    images = images.to(model_device)
     if progress:
         progress(45, f"VGGT 推理（{len(paths)} 视图）")
     try:
@@ -221,7 +224,7 @@ def reconstruct_vggt(
     valid = np.isfinite(points).all(axis=-1) & np.isfinite(confidence)
     if valid.sum() < 100:
         raise VGGTError("empty_reconstruction", "有效三维点不足，请检查照片重叠度与清晰度")
-    threshold = float(np.quantile(confidence[valid], confidence_percentile / 100.0))
+    threshold = max(1.0001, float(np.quantile(confidence[valid], confidence_percentile / 100.0)))
     valid &= confidence >= threshold
 
     flat_points = points[valid].astype(np.float64)

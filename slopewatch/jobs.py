@@ -13,6 +13,7 @@ from .core import (
     load_point_cloud,
     make_demo_comparison,
 )
+from .fusion import analyze_fusion, atlas_png
 from .photogram import compare_reconstructions
 from .quality import inspect_images
 from .reconstruction import reconstruct_with_colmap
@@ -210,6 +211,11 @@ def run_photo_job(
         (directory / "surface.json").write_text(
             json.dumps(surface_payload(comparison), ensure_ascii=False), encoding="utf-8"
         )
+        fusion = analyze_fusion(comparison)
+        (directory / "fusion.json").write_text(
+            json.dumps({"summary": fusion.summary}, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        (directory / "atlas.png").write_bytes(atlas_png(comparison, fusion))
         (directory / "diagnostics.json").write_text(
             json.dumps(diagnostics, ensure_ascii=False, indent=2), encoding="utf-8"
         )
@@ -235,6 +241,8 @@ def run_photo_job(
                     "dod.png",
                     "surface.json",
                     "diagnostics.json",
+                    "fusion.json",
+                    "atlas.png",
                     "photo_quality.json",
                 ],
             },

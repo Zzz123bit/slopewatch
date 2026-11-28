@@ -14,7 +14,7 @@ import cv2
 import numpy as np
 
 WIDTH, HEIGHT = 640, 480
-FOCAL = 800.0
+FOCAL = 900.0
 GRID = 0.0012  # metres between surface samples
 X_RANGE = (-0.55, 0.55)
 Y_RANGE = (-0.38, 0.38)
@@ -26,13 +26,16 @@ def _ramp(y):
 
 def terrain(x, y, stage):
     base = -0.52 * x + 0.05
+    rocks = 0.035 * np.exp(-(((x + 0.28) ** 2 + (y - 0.10) ** 2) / 0.02**2))
+    rocks += 0.030 * np.exp(-(((x - 0.05) ** 2 + (y + 0.22) ** 2) / 0.018**2))
+    rocks += 0.025 * np.exp(-(((x - 0.36) ** 2 + (y - 0.18) ** 2) / 0.016**2))
     rough = 0.0035 * np.sin(38 * x + 2.1) * np.cos(27 * y) + 0.002 * np.sin(70 * y)
     gully_axis = 0.02 + 0.06 * np.sin(2.4 * y)
-    gully = -0.085 * stage * _ramp(y) * np.exp(-(((x - gully_axis) / 0.035) ** 2))
-    gully2 = -0.048 * stage * _ramp(y) * np.exp(-(((x - 0.20 - 0.03 * np.sin(3 * y)) / 0.022) ** 2))
-    collapse = -0.070 * stage * np.exp(-(((x - 0.27) ** 2 + (y + 0.06) ** 2) / 0.030**2))
-    fan = 0.030 * stage * np.exp(-(((x - 0.02) ** 2) / 0.16**2 + ((y - 0.30) ** 2) / 0.05**2))
-    return base + rough + gully + gully2 + collapse + fan
+    gully = -0.120 * stage * _ramp(y) * np.exp(-(((x - gully_axis) / 0.035) ** 2))
+    gully2 = -0.070 * stage * _ramp(y) * np.exp(-(((x - 0.20 - 0.03 * np.sin(3 * y)) / 0.022) ** 2))
+    collapse = -0.100 * stage * np.exp(-(((x - 0.27) ** 2 + (y + 0.06) ** 2) / 0.030**2))
+    fan = 0.040 * stage * np.exp(-(((x - 0.02) ** 2) / 0.16**2 + ((y - 0.30) ** 2) / 0.05**2))
+    return base + rough + rocks + gully + gully2 + collapse + fan
 
 
 def _normal(x, y, stage=0.0):
@@ -90,9 +93,9 @@ def _cameras():
     cameras = []
     for index in range(8):
         t = index / 7
-        x = -0.78 + 1.56 * t
-        y = -0.42 + 0.10 * np.cos(3.0 * t)
-        eye = np.array([x, y, 1.62 + 0.10 * np.sin(2.2 * t)])
+        x = -0.46 + 0.92 * t
+        y = -0.30 + 0.06 * np.cos(3.0 * t)
+        eye = np.array([x, y, 0.95 + 0.05 * np.sin(2.2 * t)])
         target = np.array([0.0, 0.02, -0.04])
         rotation, origin = _look_at(eye, target)
         cameras.append((rotation, origin))
@@ -145,4 +148,7 @@ def main(out_root: Path):
 
 
 if __name__ == "__main__":
-    main(Path(__file__).resolve().parents[1] / "data" / "samples" / "synthetic_slope")
+    import sys
+
+    target = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).resolve().parents[1] / "data" / "samples" / "synthetic_slope"
+    main(target)

@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import os
+
 import numpy as np
 from scipy.spatial import cKDTree
 
@@ -122,7 +124,14 @@ def align_similarity(
 
     probe = _subsample(moving_sample, 2_000, seed=3)
     best = None
-    for rotation in [np.eye(3), *_pca_rotation(moving_sample, fixed_sample)]:
+    init_mode = os.environ.get("SLOPEWATCH_ALIGN_INIT", "auto").lower()
+    if init_mode == "identity":
+        candidates = [np.eye(3)]
+    elif init_mode == "pca":
+        candidates = _pca_rotation(moving_sample, fixed_sample)
+    else:
+        candidates = [np.eye(3), *_pca_rotation(moving_sample, fixed_sample)]
+    for rotation in candidates:
         candidate = Similarity(initial_scale, rotation, fixed_mean - initial_scale * (rotation @ moving_mean))
         distances = tree.query(candidate.apply(probe))[0]
         score = float(np.median(distances))
@@ -215,6 +224,70 @@ def refine_point_to_plane(
     return Similarity(scale, rotation, translation)
 
 
+def trim_surface_outliers(points: np.ndarray, rounds: int = 3, gate: float = 5.0) -> np.ndarray:
+    """Drop background/far points that sit far from the dominant slope plane."""
+    cloud = np.asarray(points, dtype=np.float64)
+    if len(cloud) < 200:
+        return cloud
+    keep = np.ones(len(cloud), dtype=bool)
+    for _ in range(rounds):
+        subset = cloud[keep]
+        center = subset.mean(axis=0)
+        centered = subset - center
+        values, vectors = np.linalg.eigh(centered.T @ centered)
+        normal = vectors[:, 0]
+        distances = np.abs((cloud - center) @ normal)
+        median = np.median(distances[keep])
+        mad = np.median(np.abs(distances[keep] - median))
+        limit = median + gate * max(mad, 1e-9)
+        updated = distances <= limit
+        if updated.sum() < 500 or np.array_equal(updated, keep):
+            break
+        keep = updated
+    return cloud[keep]
+
+
+def _rotation_between(source: np.ndarray, target: np.ndarray) -> np.ndarray:
+    source = source / np.linalg.norm(source)
+    target = target / np.linalg.norm(target)
+    cross = np.cross(source, target)
+    sine = np.linalg.norm(cross)
+    cosine = float(np.dot(source, target))
+    if sine < 1e-9:
+        return np.eye(3) if cosine > 0 else np.diag([1.0, -1.0, -1.0])
+    axis = cross / sine
+    skew = np.array([[0.0, -axis[2], axis[1]], [axis[2], 0.0, -axis[0]], [-axis[1], axis[0], 0.0]])
+    return np.eye(3) + sine * skew + (1 - cosine) * (skew @ skew)
+
+
+def plane_up_rotation(points: np.ndarray, trim: float = 0.9) -> np.ndarray:
+    """Rotate the dominant terrain plane onto XY so the DoD is a heightfield.
+
+    VGGT's world frame follows the first camera, so a pitched camera makes a
+    fixed gravity assumption wrong by tens of degrees.  Fitting the slope plane
+    is stable for both hand-held and drone captures; the sign is chosen so the
+    surface normal points back towards the camera (+Z of the VGGT frame).
+    """
+    cloud = np.asarray(points, dtype=np.float64)
+    if cloud.ndim != 2 or cloud.shape[1] != 3 or len(cloud) < 100:
+        raise ValueError("点云至少需要 100 个三维点")
+    center = cloud.mean(axis=0)
+    normal = np.array([0.0, 0.0, 1.0])
+    for _ in range(4):
+        centered = cloud - center
+        values, vectors = np.linalg.eigh(centered.T @ centered)
+        normal = vectors[:, 0]
+        distances = centered @ normal
+        keep = np.abs(distances) <= np.quantile(np.abs(distances), trim)
+        if keep.sum() < 100:
+            break
+        cloud = cloud[keep]
+        center = cloud.mean(axis=0)
+    if normal[2] < 0:
+        normal = -normal
+    return _rotation_between(normal, np.array([0.0, 0.0, 1.0]))
+
+
 def gravity_up_rotation(points: np.ndarray) -> np.ndarray:
     """Heuristic pose from a hand-held/drone capture: VGGT world Y points down.
 
@@ -237,7 +310,7 @@ def compare_reconstructions(
     elapsed_hours: float = 1.0,
     scale_mm_per_unit: float = 1.0,
     max_points: int = 300_000,
-    up_mode: str = "y_down",
+    up_mode: str = "plane",
 ) -> tuple[Comparison, dict]:
     """Align two VGGT epochs and run the shared DoD comparison.
 
@@ -247,8 +320,8 @@ def compare_reconstructions(
     ``up_mode`` selects the vertical axis: ``y_down`` for raw VGGT world frames,
     ``z_up`` when the points are already in a Z-up survey frame.
     """
-    if up_mode not in ("y_down", "z_up"):
-        raise ValueError("up_mode 仅支持 y_down 或 z_up")
+    if up_mode not in ("plane", "y_down", "z_up"):
+        raise ValueError("up_mode 仅支持 plane、y_down 或 z_up")
     before = np.asarray(before_points, dtype=np.float64)
     after = np.asarray(after_points, dtype=np.float64)
     if not np.isfinite(before).all() or not np.isfinite(after).all():
@@ -256,13 +329,20 @@ def compare_reconstructions(
     if scale_mm_per_unit <= 0 or not np.isfinite(scale_mm_per_unit):
         raise ValueError("尺度系数须为有限正数")
 
+    before = trim_surface_outliers(before)
+    after = trim_surface_outliers(after)
     if len(after) > max_points:
         after = _subsample(after, max_points, seed=4)
     if len(before) > max_points:
         before = _subsample(before, max_points, seed=5)
 
     aligned_after, alignment = align_similarity(after, before)
-    rotation = gravity_up_rotation(before) if up_mode == "y_down" else np.eye(3)
+    if up_mode == "plane":
+        rotation = plane_up_rotation(before)
+    elif up_mode == "y_down":
+        rotation = gravity_up_rotation(before)
+    else:
+        rotation = np.eye(3)
     before_mm = (before * scale_mm_per_unit) @ rotation.T
     after_mm = (aligned_after * scale_mm_per_unit) @ rotation.T
 
@@ -273,7 +353,44 @@ def compare_reconstructions(
         erosion_threshold_mm=threshold_mm,
         elapsed_hours=elapsed_hours,
     )
+
+    # Residual tilt after a global similarity fit is a well-known DEM artefact.
+    # A robust plane fitted to the common cells removes it without eating the
+    # local erosion signal (Huber IRLS ignores the changed cells).
+    detrend = {"applied": False}
+    valid = comparison.valid
+    if int(valid.sum()) > 200:
+        xs = comparison.x_mm[valid]
+        ys = comparison.y_mm[valid]
+        dz = comparison.delta_mm[valid]
+        design = np.column_stack((np.ones_like(xs), xs, ys))
+        weights = np.ones_like(dz)
+        coefficients = np.zeros(3)
+        for _ in range(6):
+            weighted = design * weights[:, None]
+            coefficients, *_ = np.linalg.lstsq(weighted, dz * weights, rcond=None)
+            residual = dz - design @ coefficients
+            scale = max(1.4826 * np.median(np.abs(residual - np.median(residual))), 1e-9)
+            weights = 1.0 / np.maximum(1.0, np.abs(residual) / (1.5 * scale))
+        ax, ay = after_mm[:, 0], after_mm[:, 1]
+        correction = coefficients[0] + coefficients[1] * ax + coefficients[2] * ay
+        after_mm = after_mm.copy()
+        after_mm[:, 2] -= correction
+        comparison = compare_point_clouds(
+            before_mm,
+            after_mm,
+            grid_step_mm=grid_step_mm,
+            erosion_threshold_mm=threshold_mm,
+            elapsed_hours=elapsed_hours,
+        )
+        detrend = {
+            "applied": True,
+            "plane_mm": [float(value) for value in coefficients],
+            "note": "稳健平面去趋势，抑制全局相似配准残余倾斜",
+        }
+
     diagnostics = {
+        "detrend": detrend,
         "alignment": alignment,
         "scale_mm_per_unit": float(scale_mm_per_unit),
         "scale_calibrated": not np.isclose(scale_mm_per_unit, 1.0),

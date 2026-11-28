@@ -1,10 +1,28 @@
 # 坡镜智安 MVP
 
-用于室内小型边坡试验的本地演示原型，包含合成样例、点云时相差分、照片质量检查、可选 COLMAP 重建和 FastAPI 任务接口。
+用于室内小型边坡试验的本地演示原型，包含合成样例、点云时相差分、照片质量检查、可选 COLMAP 重建和 FastAPI 任务接口。最新版本增加了**雨前/雨后多视角照片 → VGGT 三维重建 → 相似变换配准 → 冲淤量化 → 巡检报告**的完整链路。
+
+![远程页面](docs/web_ui.png)
+
+## 快速开始（照片对比）
+
+```powershell
+python -m pip install -r requirements.txt
+# VGGT 代码与权重（只需一次）
+git clone https://github.com/facebookresearch/vggt.git
+python -m pip install -e .\vggt
+# 权重放到 D:\models\VGGT-1B\model.safetensors，或用环境变量指定
+$env:SLOPEWATCH_VGGT_CHECKPOINT = "D:\models\VGGT-1B\model.safetensors"
+
+uvicorn api:app --host 127.0.0.1 --port 8001
+streamlit run app.py --server.address 127.0.0.1
+```
+
+浏览器打开 `http://127.0.0.1:8501`，选择“照片对比（VGGT）”，分别上传雨前、雨后两个照片 ZIP 即可。远程演示入口使用 `public_api:app`（Bearer 令牌），见下文“校赛远程演示”。
 
 ## 校赛远程演示
 
-GitHub 保存源码。比赛电脑运行 FastAPI 并保存任务结果。评委在手机或电脑上打开 HTTPS 地址，输入团队令牌，就能提交合成样例或两期点云、查看冲淤指标并下载巡检报告。远程页面与 API 共用一个域名。
+GitHub 保存源码（[Zzz123bit/slopewatch](https://github.com/Zzz123bit/slopewatch)）。比赛电脑运行 FastAPI 并保存任务结果。评委在手机或电脑上打开 HTTPS 地址，输入团队令牌，就能提交合成样例或两期点云、查看冲淤指标并下载巡检报告。远程页面与 API 共用一个域名。
 
 ```text
 评委浏览器或调用程序 → Cloudflare HTTPS 地址 → Cloudflare Tunnel
@@ -121,22 +139,50 @@ $env:SLOPEWATCH_VGGT_CHECKPOINT = "D:\models\VGGT-1B\model.safetensors"
 
 调用 `GET /api/v1/health` 的 `vggt` 字段可查看权重是否下载完整：下载器会保留 `model.safetensors.parts.json`，未下完时接口返回 `503` 并给出进度。
 
-注意：
+### 输出示例
 
-- VGGT 输出的是**任意尺度**坐标，默认按 1 单位 = 1 mm 计算。现场有标尺或已知靶标时，请把换算系数填入“尺度系数（mm/单位）”，否则体积与深度只能作为相对值。
-- 配准为全局相似变换，适合相机路径相近的两期拍摄；若两期视角差异很大，先看页面返回的配准残差再决定是否采用。
-- 单期 8 个视角约占 6–7 GB 显存；显存不足时减少“每期视角数”。
+一次照片任务会生成 `metrics.json`、`change.csv`、`report.pdf`、`surface.png`、`dod.png`、`atlas.png`、`surface.json`、`fusion.json` 与 `diagnostics.json`：
+
+| 雨前/雨后三维坡面 | 冲淤高程差 | 冲淤与地貌图谱 |
+|---|---|---|
+| ![surface](docs/surface.png) | ![dod](docs/dod.png) | ![atlas](docs/atlas.png) |
+
+`atlas.png` 由 `slopewatch/fusion.py` 生成：无掩码时按几何形态（细长冲刷斑块 → 冲沟候选，紧凑且邻近堆积的斑块 → 坍塌候选）自动分类，并统计防护区/对照区的单位面积冲刷量；若配置 `SLOPEWATCH_SEGMENTATION_ONNX`，可改用 5 类语义分割模型（0 其他、1 冲沟、2 坍塌、3 防护、4 未防护对照、255 未分类）。
+
+### 运行参数
+
+| 环境变量 | 默认 | 说明 |
+|---|---|---|
+| `SLOPEWATCH_VGGT_CHECKPOINT` | `D:\models\VGGT-1B\model.safetensors` | 权重路径 |
+| `SLOPEWATCH_VGGT_DEVICE` | `auto` | `auto` 在显存不足 6 GB 时自动回退 CPU；可强制 `cuda`/`cpu` |
+| `SLOPEWATCH_VGGT_DTYPE` | `fp32` | `bf16` 仅用于实验；VGGT 的部分算子不支持 bf16 权重 |
+| `SLOPEWATCH_ALIGN_INIT` | `auto` | 配准初值：`auto`（单位阵 + 主轴候选）、`identity`、`pca` |
+| `SLOPEWATCH_SEGMENTATION_ONNX` | 空 | 可选语义分割 ONNX 模型 |
+
+在本机 RTX 4060 Laptop（8 GB，桌面占用约 6 GB）上，两期 4 视角任务约 40 秒；显存不足时自动回退 CPU，约 3–5 分钟。
+
+### 验证与已知限制
+
+- **几何链路验证**：把解析地形做随机尺度/旋转/平移后送入配准与差分，60k 点、已知冲刷 2.78 L 时恢复 2.70 L（**-3%**），最大深度一致；说明配准与体积积分本身可靠。
+- **合成照片验证**：`scripts/make_synthetic_photos.py` 生成的两期多视角影像可完整跑通链路并产出全部文件，但 VGGT 对 1 m 拍摄距离下 5–10 cm 的细沟分辨不足，恢复体积约为真值的 35–45%，并残留趋势项。**真实试验请用 25–40 张近景、固定路径、带标尺/ArUco 靶标的照片**，并按标尺换算尺度。
+- 全局相似变换配准会把少量真实变化吸收进变换（合成实验约 15%）；对精度要求高的场景，建议增加固定靶标并用 `slopewatch/survey.py` 的控制点解算流程。
+- VGGT 输出为任意尺度；未标定时体积/深度只能作相对比较。
+
+### 注意
+
+- 配准为全局相似变换，适合相机路径相近的两期拍摄；若两期视角差异很大，先看返回的配准残差与 `converged` 字段再决定是否采用。
+- 单期 8 个视角约占 6–7 GB 显存；显存不足时减少“每期视角数”或让其自动回退 CPU。
 
 ## REST API
 
-- `GET /api/v1/health` 查看服务与 COLMAP 状态。
+- `GET /api/v1/health` 查看服务、COLMAP 与 VGGT 状态（权重完整性、设备与进度）。
 - `POST /api/v1/jobs/demo` 运行合成演示任务。
 - `POST /api/v1/jobs/compare` 上传 `before` 和 `after` 点云，表单字段支持 `unit`、`grid_step_mm`、`erosion_threshold_mm`、`elapsed_hours`、`metadata_json`。
 - `POST /api/v1/reconstructions` 上传 `photos_zip` 和 `max_image_size`，提交 COLMAP 照片重建。
 - `POST /api/v1/jobs/photo-compare` 上传 `before_zip`、`after_zip`，可选 `grid_step_mm`、`erosion_threshold_mm`、`elapsed_hours`、`scale_mm_per_unit`、`max_views`、`metadata_json`，提交 VGGT 双时相重建与冲淤分析。
 - `GET /api/v1/jobs/{job_id}` 查询状态。
 - `GET /api/v1/jobs/{job_id}/result` 读取指标结果。
-- `GET /api/v1/jobs/{job_id}/files/{filename}` 下载 CSV、JSON、PDF、三维坡面与冲淤图 PNG。
+- `GET /api/v1/jobs/{job_id}/files/{filename}` 下载 CSV、JSON、PDF、三维坡面、冲淤图与图谱 PNG。
 
 任务数据保存在工作区 `data/jobs/`。接口默认只监听本机，适合本地演示。
 
