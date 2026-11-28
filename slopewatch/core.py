@@ -270,6 +270,7 @@ def compare_point_clouds(
     grid_step_mm: float = 2.0,
     erosion_threshold_mm: float = 3.0,
     elapsed_hours: float = 1.0,
+    bounds_xy_mm: tuple[float, float, float, float] | None = None,
 ) -> Comparison:
     if grid_step_mm <= 0 or erosion_threshold_mm < 0 or elapsed_hours < 0:
         raise ValueError("网格间距需大于 0，阈值和时长不能为负")
@@ -281,10 +282,20 @@ def compare_point_clouds(
     if x_max <= x_min or y_max <= y_min:
         raise ValueError("两期点云没有重叠的平面范围")
 
-    x_coords = np.arange(x_min, x_max + grid_step_mm * 0.25, grid_step_mm)
-    y_coords = np.arange(y_min, y_max + grid_step_mm * 0.25, grid_step_mm)
-    if len(x_coords) * len(y_coords) > 1_000_000:
-        raise ValueError("当前网格会生成超过 100 万个像素，请增大网格间距")
+    if bounds_xy_mm is not None:
+        # Survey volumes integrate complete horizontal cells inside the measured plot.
+        x_min, y_min, x_max, y_max = bounds_xy_mm
+        nx = math.floor((x_max - x_min) / grid_step_mm)
+        ny = math.floor((y_max - y_min) / grid_step_mm)
+        x_min += grid_step_mm / 2
+        y_min += grid_step_mm / 2
+    else:
+        nx = math.ceil((x_max - x_min) / grid_step_mm + 0.25)
+        ny = math.ceil((y_max - y_min) / grid_step_mm + 0.25)
+    if min(nx, ny) < 1 or nx * ny > 1_000_000:
+        raise ValueError("分析范围须至少容纳一格，且总网格不能超过 100 万格")
+    x_coords = x_min + np.arange(nx) * grid_step_mm
+    y_coords = y_min + np.arange(ny) * grid_step_mm
     grid_x, grid_y = np.meshgrid(x_coords, y_coords)
     grid = (grid_x, grid_y)
 

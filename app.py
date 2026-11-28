@@ -10,10 +10,13 @@ import streamlit as st
 from plotly.subplots import make_subplots
 
 from slopewatch.core import comparison_csv, comparison_json, compare_point_clouds, load_point_cloud, make_demo_comparison
+from slopewatch.photogram import compare_reconstructions
 from slopewatch.quality import inspect_images
 from slopewatch.reconstruction import colmap_status, reconstruct_with_colmap
 from slopewatch.report import build_report_pdf
 from slopewatch.uploads import extract_image_archive
+from slopewatch.vggt_recon import reconstruct_vggt, vggt_status
+from slopewatch.visuals import render_dod_png, render_surface_png
 
 
 st.set_page_config(page_title="坡镜智安", page_icon="⛰️", layout="wide")
@@ -119,10 +122,12 @@ st.title("坡镜智安")
 st.caption("室内坡面多时相三维形貌分析原型")
 
 with st.sidebar:
-    page = st.radio("功能", ["演示样例", "点云差分", "防护效果", "照片质检", "照片重建"])
+    page = st.radio("功能", ["演示样例", "点云差分", "防护效果", "照片质检", "照片重建", "照片对比（VGGT）"])
     colmap = colmap_status()
+    vggt = vggt_status()
     st.divider()
     st.write("COLMAP", "可用" if colmap["available"] else "未配置")
+    st.write("VGGT", "可用" if vggt["available"] else "未就绪")
     st.caption("接口文档地址为运行 API 后打开 /docs")
 
 
@@ -286,4 +291,64 @@ elif page == "照片重建":
         st.dataframe(st.session_state["reconstruction_quality"]["images"], use_container_width=True, hide_index=True)
     if "reconstructed_cloud" in st.session_state:
         st.download_button("下载 COLMAP 点云 PLY", st.session_state["reconstructed_cloud"], file_name="fused.ply", mime="application/octet-stream")
+
+elif page == "照片对比（VGGT）":
+    st.write("上传雨前、雨后各一组多视角照片（ZIP），用 VGGT-1B 重建两期坡面，自动配准后计算冲淤。")
+    if not vggt["available"]:
+        st.warning(f"VGGT 当前不可用：{vggt['detail']}")
+    left, right = st.columns(2)
+    before_zip = left.file_uploader("雨前照片 ZIP（8–32 张）", type=["zip"], key="vggt_before")
+    after_zip = right.file_uploader("雨后照片 ZIP（8–32 张）", type=["zip"], key="vggt_after")
+    columns = st.columns(5)
+    grid = columns[0].number_input("网格间距 (mm)", min_value=0.2, max_value=100.0, value=2.0, step=0.2, key="vggt_grid")
+    threshold = columns[1].number_input("变化阈值 (mm)", min_value=0.0, max_value=100.0, value=3.0, step=0.5, key="vggt_threshold")
+    elapsed = columns[2].number_input("时相间隔 (h)", min_value=0.0, max_value=10000.0, value=1.0, step=0.5, key="vggt_elapsed")
+    scale = columns[3].number_input("尺度系数 (mm/单位)", min_value=0.000001, max_value=1000000.0, value=1.0,
+                                    step=0.001, format="%.6f", key="vggt_scale")
+    views = columns[4].selectbox("每期视角", [6, 8, 10, 12], index=1, key="vggt_views")
+    if st.button("开始 VGGT 重建与对比", type="primary",
+                 disabled=before_zip is None or after_zip is None or not vggt["available"]):
+        try:
+            with tempfile.TemporaryDirectory(prefix="slopewatch-vggt-") as temporary:
+                root = Path(temporary)
+                before_images = extract_image_archive(before_zip.getvalue(), root / "before")
+                after_images = extract_image_archive(after_zip.getvalue(), root / "after")
+                with st.status("VGGT 重建中…", expanded=True) as status_box:
+                    st.write(f"雨前时相：{len(before_images)} 张照片")
+                    before_cloud = reconstruct_vggt(before_images, max_views=views)
+                    st.write(f"雨后时相：{len(after_images)} 张照片")
+                    after_cloud = reconstruct_vggt(after_images, max_views=views)
+                    status_box.update(label="相似变换配准与冲淤计算", state="running")
+                    comparison, diagnostics = compare_reconstructions(
+                        before_cloud.points,
+                        after_cloud.points,
+                        grid_step_mm=grid,
+                        threshold_mm=threshold,
+                        elapsed_hours=elapsed,
+                        scale_mm_per_unit=scale,
+                    )
+                    status_box.update(label="分析完成", state="complete")
+                st.session_state["vggt_comparison"] = comparison
+                st.session_state["vggt_diagnostics"] = {
+                    **diagnostics,
+                    "photo": {"before": len(before_images), "after": len(after_images)},
+                    "scale_mm_per_unit": scale,
+                }
+        except Exception as error:
+            st.error(str(error))
+    if "vggt_comparison" in st.session_state:
+        comparison = st.session_state["vggt_comparison"]
+        diagnostics = st.session_state.get("vggt_diagnostics", {})
+        if not diagnostics.get("scale_calibrated", False):
+            st.info("尺度系数仍为 1：深度与体积按重建单位输出，现场有标尺时请填写换算系数后重算。")
+        st.image(render_surface_png(comparison), caption="雨前 / 雨后三维坡面")
+        st.image(render_dod_png(comparison), caption="冲淤高程差图")
+        _show_result(
+            comparison,
+            {
+                "source": "vggt_photo",
+                "scale_mm_per_unit": diagnostics.get("scale_mm_per_unit", 1.0),
+                "photos": diagnostics.get("photo", {}),
+            },
+        )
 

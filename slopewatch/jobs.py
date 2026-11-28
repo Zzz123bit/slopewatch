@@ -13,10 +13,13 @@ from .core import (
     load_point_cloud,
     make_demo_comparison,
 )
+from .photogram import compare_reconstructions
 from .quality import inspect_images
 from .reconstruction import reconstruct_with_colmap
 from .report import build_report_pdf
 from .uploads import extract_image_archive
+from .vggt_recon import reconstruct_vggt
+from .visuals import render_dod_png, render_surface_png, surface_payload
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -129,6 +132,114 @@ def run_compare_job(
         )
         _complete_comparison(job_id, comparison, metadata)
     except Exception as error:
+        update_job(job_id, status="failed", error=str(error))
+
+
+def run_photo_job(
+    job_id: str,
+    before_archive: str,
+    after_archive: str,
+    *,
+    grid_step_mm: float,
+    erosion_threshold_mm: float,
+    elapsed_hours: float,
+    scale_mm_per_unit: float,
+    max_views: int,
+    metadata: dict,
+):
+    """Reconstruct both epochs with VGGT and compare them in a common frame."""
+    try:
+        directory = job_dir(job_id)
+        update_job(job_id, status="running", progress=4, message="解压雨前/雨后照片")
+        before_images = extract_image_archive(directory / before_archive, directory / "before")
+        after_images = extract_image_archive(directory / after_archive, directory / "after")
+        if len(before_images) < 8 or len(after_images) < 8:
+            raise ValueError("每个时相至少需要 8 张照片，建议 25–40 张并保持高重叠")
+
+        update_job(job_id, progress=8, message="检查照片质量")
+        quality = {
+            "before": inspect_images([(path.name, path) for path in before_images]),
+            "after": inspect_images([(path.name, path) for path in after_images]),
+        }
+        (directory / "photo_quality.json").write_text(
+            json.dumps(quality, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
+        def before_progress(value, message):
+            update_job(job_id, progress=10 + int(value * 0.38), message=f"雨前：{message}")
+
+        def after_progress(value, message):
+            update_job(job_id, progress=50 + int(value * 0.38), message=f"雨后：{message}")
+
+        update_job(job_id, progress=10, message="雨前时相 VGGT 重建")
+        before_cloud = reconstruct_vggt(before_images, max_views=max_views, progress=before_progress)
+        update_job(job_id, progress=50, message="雨后时相 VGGT 重建")
+        after_cloud = reconstruct_vggt(after_images, max_views=max_views, progress=after_progress)
+
+        update_job(job_id, progress=88, message="相似变换配准与高程差计算")
+        comparison, diagnostics = compare_reconstructions(
+            before_cloud.points,
+            after_cloud.points,
+            grid_step_mm=grid_step_mm,
+            threshold_mm=erosion_threshold_mm,
+            elapsed_hours=elapsed_hours,
+            scale_mm_per_unit=scale_mm_per_unit,
+        )
+        diagnostics["reconstruction"] = {"before": before_cloud.stats, "after": after_cloud.stats}
+        diagnostics["photos"] = {"before": len(before_images), "after": len(after_images)}
+        diagnostics["backend"] = "VGGT-1B (fp32 weights, bf16 autocast)"
+
+        update_job(job_id, progress=93, message="生成三维坡面、冲淤图与报告")
+        report_metadata = {
+            **metadata,
+            "重建方式": "VGGT-1B 多视角重建",
+            "相似变换配准": (
+                f"尺度 {diagnostics['alignment']['scale']:.4f}，"
+                f"残差中位数 {diagnostics['alignment']['median_residual']:.3f} 单位"
+            ),
+            "尺度是否标定": "是" if diagnostics["scale_calibrated"] else "否（按 1 单位=1 mm 输出，需现场标尺复核）",
+            "前后照片数": f"{len(before_images)} / {len(after_images)}",
+        }
+        (directory / "metrics.json").write_bytes(comparison_json(comparison, report_metadata))
+        (directory / "change.csv").write_bytes(comparison_csv(comparison))
+        (directory / "report.pdf").write_bytes(
+            build_report_pdf(comparison.metrics, comparison.gullies, report_metadata)
+        )
+        (directory / "surface.png").write_bytes(render_surface_png(comparison))
+        (directory / "dod.png").write_bytes(render_dod_png(comparison))
+        (directory / "surface.json").write_text(
+            json.dumps(surface_payload(comparison), ensure_ascii=False), encoding="utf-8"
+        )
+        (directory / "diagnostics.json").write_text(
+            json.dumps(diagnostics, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        update_job(
+            job_id,
+            status="complete",
+            progress=100,
+            message="分析完成",
+            result={
+                "metrics": comparison.metrics,
+                "gullies": comparison.gullies,
+                "diagnostics": {
+                    "scale_calibrated": diagnostics["scale_calibrated"],
+                    "similarity_scale": diagnostics["alignment"]["scale"],
+                    "median_residual": diagnostics["alignment"]["median_residual"],
+                    "views": diagnostics["reconstruction"],
+                },
+                "files": [
+                    "metrics.json",
+                    "change.csv",
+                    "report.pdf",
+                    "surface.png",
+                    "dod.png",
+                    "surface.json",
+                    "diagnostics.json",
+                    "photo_quality.json",
+                ],
+            },
+        )
+    except Exception as error:  # noqa: BLE001 - job errors are reported to the client
         update_job(job_id, status="failed", error=str(error))
 
 

@@ -12,9 +12,11 @@ from slopewatch.jobs import (
     read_job,
     run_compare_job,
     run_demo_job,
+    run_photo_job,
     run_reconstruction_job,
 )
 from slopewatch.reconstruction import colmap_status
+from slopewatch.vggt_recon import vggt_status
 
 
 app = FastAPI(
@@ -38,7 +40,7 @@ def _read_upload(upload: UploadFile, limit: int = MAX_UPLOAD_BYTES) -> bytes:
 
 @app.get("/api/v1/health")
 def health():
-    return {"status": "ok", "service": "slopewatch", "colmap": colmap_status()}
+    return {"status": "ok", "service": "slopewatch", "colmap": colmap_status(), "vggt": vggt_status()}
 
 
 @submissions.post("/api/v1/jobs/demo", status_code=202)
@@ -89,6 +91,62 @@ def start_comparison(
         erosion_threshold_mm,
         elapsed_hours,
         metadata,
+    )
+    return {"job_id": job_id, "status": "queued", "status_url": f"/api/v1/jobs/{job_id}"}
+
+
+@submissions.post("/api/v1/jobs/photo-compare", status_code=202)
+def start_photo_comparison(
+    background_tasks: BackgroundTasks,
+    before_zip: UploadFile = File(...),
+    after_zip: UploadFile = File(...),
+    grid_step_mm: float = Form(2.0, gt=0.0, le=100.0),
+    erosion_threshold_mm: float = Form(3.0, ge=0.0, le=100.0),
+    elapsed_hours: float = Form(1.0, ge=0.0, le=1000000.0),
+    scale_mm_per_unit: float = Form(1.0, gt=0.0, le=1000000.0),
+    max_views: int = Form(8, ge=2, le=16),
+    metadata_json: str = Form("{}"),
+):
+    """Upload two multi-view photo sets and reconstruct both with VGGT."""
+    status = vggt_status()
+    if not status["available"]:
+        raise HTTPException(status_code=503, detail=f"VGGT 不可用：{status['detail']}")
+    for upload in (before_zip, after_zip):
+        if Path(upload.filename or "").suffix.lower() != ".zip":
+            raise HTTPException(status_code=415, detail="照片请打包为 ZIP 上传")
+    try:
+        metadata = json.loads(metadata_json)
+        if not isinstance(metadata, dict):
+            raise ValueError("metadata_json 须为 JSON 对象")
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+    before_data = _read_upload(before_zip, limit=1024 * 1024 * 1024)
+    after_data = _read_upload(after_zip, limit=1024 * 1024 * 1024)
+    job_id, directory = create_job(
+        "photo_comparison",
+        {
+            **metadata,
+            "grid_step_mm": grid_step_mm,
+            "erosion_threshold_mm": erosion_threshold_mm,
+            "elapsed_hours": elapsed_hours,
+            "scale_mm_per_unit": scale_mm_per_unit,
+            "max_views": max_views,
+        },
+    )
+    (directory / "before.zip").write_bytes(before_data)
+    (directory / "after.zip").write_bytes(after_data)
+    background_tasks.add_task(
+        run_photo_job,
+        job_id,
+        "before.zip",
+        "after.zip",
+        grid_step_mm=grid_step_mm,
+        erosion_threshold_mm=erosion_threshold_mm,
+        elapsed_hours=elapsed_hours,
+        scale_mm_per_unit=scale_mm_per_unit,
+        max_views=max_views,
+        metadata=metadata,
     )
     return {"job_id": job_id, "status": "queued", "status_url": f"/api/v1/jobs/{job_id}"}
 

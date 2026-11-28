@@ -89,6 +89,7 @@ uvicorn api:app --host 127.0.0.1 --port 8001
 - **防护效果** 汇总不同试验组导出的指标 JSON，选择裸土对照并计算各防护组冲刷体积变化率。
 - **照片质检** 统计分辨率、清晰度、曝光和可见的 ArUco 标志数量。
 - **照片重建** 配置了 COLMAP 后可从单时相照片 ZIP 生成稠密 PLY 点云。
+- **照片对比（VGGT）** 上传雨前、雨后两组多视角照片，用 VGGT-1B 重建两期坡面，自动配准后输出三维坡面、冲淤图、指标与巡检 PDF。
 
 ## 点云输入要求
 
@@ -102,7 +103,29 @@ CSV 首行可使用 `x,y,z` 列名。XYZ/TXT 每行默认前三列为 XYZ，COLM
 
 照片重建需要额外安装 COLMAP。将 `colmap.exe`/`colmap` 可执行文件放入 `PATH`，或设置 `COLMAP_EXE` 指向可执行文件（批处理 `.bat` 不支持）。每个 ZIP 代表一个时相，建议包含 25–40 张有重叠的清晰照片。每个 ZIP 最多 300 张图片、展开后最多 1 GB、单图最多 50 MB，并限制单图像素数为 8000 万。Windows 上可先用 8–16 张低分辨率测试图验证完整链路。
 
-COLMAP 结果使用自由尺度坐标。恢复已知长度比例和对齐到跨时相坐标系后，再将点云导入“点云差分”。VGGT 尚未接入本 MVP。
+COLMAP 结果使用自由尺度坐标。恢复已知长度比例和对齐到跨时相坐标系后，再将点云导入“点云差分”。
+
+## VGGT 照片对比
+
+“照片对比（VGGT）”页面不需要 COLMAP：上传雨前、雨后各一个照片 ZIP（每期 8–32 张、建议 25–40 张高重叠照片），服务端用官方 VGGT-1B 分别重建两期点云，再做相似变换配准并计算高程差。
+
+准备权重与依赖：
+
+```powershell
+python -m pip install torch safetensors matplotlib
+git clone https://github.com/facebookresearch/vggt.git
+python -m pip install -e .\vggt
+# 权重默认放在 D:\models\VGGT-1B\model.safetensors，也可用环境变量指定
+$env:SLOPEWATCH_VGGT_CHECKPOINT = "D:\models\VGGT-1B\model.safetensors"
+```
+
+调用 `GET /api/v1/health` 的 `vggt` 字段可查看权重是否下载完整：下载器会保留 `model.safetensors.parts.json`，未下完时接口返回 `503` 并给出进度。
+
+注意：
+
+- VGGT 输出的是**任意尺度**坐标，默认按 1 单位 = 1 mm 计算。现场有标尺或已知靶标时，请把换算系数填入“尺度系数（mm/单位）”，否则体积与深度只能作为相对值。
+- 配准为全局相似变换，适合相机路径相近的两期拍摄；若两期视角差异很大，先看页面返回的配准残差再决定是否采用。
+- 单期 8 个视角约占 6–7 GB 显存；显存不足时减少“每期视角数”。
 
 ## REST API
 
@@ -110,9 +133,10 @@ COLMAP 结果使用自由尺度坐标。恢复已知长度比例和对齐到跨�
 - `POST /api/v1/jobs/demo` 运行合成演示任务。
 - `POST /api/v1/jobs/compare` 上传 `before` 和 `after` 点云，表单字段支持 `unit`、`grid_step_mm`、`erosion_threshold_mm`、`elapsed_hours`、`metadata_json`。
 - `POST /api/v1/reconstructions` 上传 `photos_zip` 和 `max_image_size`，提交 COLMAP 照片重建。
+- `POST /api/v1/jobs/photo-compare` 上传 `before_zip`、`after_zip`，可选 `grid_step_mm`、`erosion_threshold_mm`、`elapsed_hours`、`scale_mm_per_unit`、`max_views`、`metadata_json`，提交 VGGT 双时相重建与冲淤分析。
 - `GET /api/v1/jobs/{job_id}` 查询状态。
 - `GET /api/v1/jobs/{job_id}/result` 读取指标结果。
-- `GET /api/v1/jobs/{job_id}/files/{filename}` 下载 CSV、JSON、PDF 或重建点云。
+- `GET /api/v1/jobs/{job_id}/files/{filename}` 下载 CSV、JSON、PDF、三维坡面与冲淤图 PNG。
 
 任务数据保存在工作区 `data/jobs/`。接口默认只监听本机，适合本地演示。
 

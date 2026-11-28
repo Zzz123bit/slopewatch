@@ -60,6 +60,10 @@
     dd { margin:3px 0 0; font-size:22px; font-weight:650; font-variant-numeric:tabular-nums; }
     dd small { font-size:13px; font-weight:500; margin-left:4px; }
     .downloads { display:flex; flex-wrap:wrap; gap:8px; }
+    .figures { display:grid; gap:10px; margin:0 0 16px; }
+    .figures img { width:100%; border:1px solid var(--line); border-radius:8px; display:block; }
+    .figures figure { margin:0; }
+    .figures figcaption { color:var(--muted); font-size:13px; margin-top:4px; }
     .file-button,.retry { color:var(--green); background:#fff; border-color:#b1c3b3; padding:7px 10px; font-size:13px; }
     .file-button:hover,.retry:hover { background:#edf3e9; }
     .retry { margin-top:10px; }
@@ -92,6 +96,7 @@
             <div class="modes">
               <label><input type="radio" name="mode" value="demo" checked>合成样例</label>
               <label><input type="radio" name="mode" value="compare">上传点云</label>
+              <label><input type="radio" name="mode" value="photo">照片对比</label>
             </div>
             <p class="hint" id="mode-hint">用合成的降雨前后坡面运行一次分析。</p>
             <fieldset id="compare-fields" class="fields" disabled hidden>
@@ -105,6 +110,19 @@
                 <label class="control">时相间隔（h）<input type="number" name="elapsed_hours" min="0" max="1000000" step="any" value="1" required></label>
               </div>
             </fieldset>
+            <fieldset id="photo-fields" class="fields" disabled hidden>
+              <legend class="sr">两期多视角照片与重建参数</legend>
+              <label class="control">雨前照片 ZIP（8–32 张多视角）<input type="file" name="p_before" accept=".zip"></label>
+              <label class="control">雨后照片 ZIP（8–32 张多视角）<input type="file" name="p_after" accept=".zip"></label>
+              <div class="pair">
+                <label class="control">网格间距（mm）<input type="number" name="p_grid" min="0.2" max="100" step="any" value="2"></label>
+                <label class="control">变化阈值（mm）<input type="number" name="p_threshold" min="0" max="100" step="any" value="3"></label>
+                <label class="control">时相间隔（h）<input type="number" name="p_elapsed" min="0" max="1000000" step="any" value="1"></label>
+                <label class="control">尺度系数（mm/单位）<input type="number" name="p_scale" min="0.000001" max="1000000" step="any" value="1" title="VGGT 输出为任意尺度；现场有标尺时填入换算系数"></label>
+                <label class="control">每期视角数<select name="p_views"><option value="6">6</option><option value="8" selected>8</option><option value="10">10</option><option value="12">12</option></select></label>
+              </div>
+              <p class="hint">两期照片由 VGGT 重建后自动做相似变换配准。默认尺度系数为 1，报告中的体积单位需按现场标尺复核。</p>
+            </fieldset>
           </fieldset>
           <button id="submit" class="main-button" type="submit">运行样例</button>
         </section>
@@ -115,6 +133,7 @@
           <progress id="progress" max="100" value="0" aria-label="任务进度" hidden></progress>
           <button type="button" id="retry" class="retry" hidden>重新查询此任务</button>
           <div id="outcome" hidden>
+            <div class="figures" id="figures"></div>
             <dl id="metrics"></dl>
             <div class="downloads" id="downloads" aria-label="下载分析文件"></div>
             <p class="hint" id="download-error" role="alert"></p>
@@ -129,24 +148,34 @@
     const form = get('job-form');
     const tokenInput = get('token');
     const compareFields = get('compare-fields');
+    const photoFields = get('photo-fields');
     const submitButton = get('submit');
     const progress = get('progress');
     let currentJob = null;
     const isCompare = () => form.elements.mode.value === 'compare';
+    const isPhoto = () => form.elements.mode.value === 'photo';
     const metricSpecs = [
       ['阈值以上冲刷体积','erosion_volume_l','L'],
       ['阈值以上堆积体积','deposition_volume_l','L'],
       ['最大冲刷深度','max_erosion_depth_mm','mm'],
       ['变化面积','changed_area_m2','m²']
     ];
-    const fileLabels = {'change.csv':'高程差 CSV','metrics.json':'指标 JSON','report.pdf':'巡检 PDF'};
+    const fileLabels = {'change.csv':'高程差 CSV','metrics.json':'指标 JSON','report.pdf':'巡检 PDF',
+      'surface.png':'三维坡面 PNG','dod.png':'冲淤图 PNG','diagnostics.json':'诊断 JSON'};
+    const figureSpecs = [['surface.png','雨前 / 雨后三维坡面'], ['dod.png','冲淤高程差图']];
     function updateMode() {
-      compareFields.disabled = !isCompare();
-      compareFields.hidden = !isCompare();
-      get('mode-hint').textContent = isCompare()
+      const compare = isCompare();
+      const photo = isPhoto();
+      compareFields.disabled = !compare;
+      compareFields.hidden = !compare;
+      photoFields.disabled = !photo;
+      photoFields.hidden = !photo;
+      get('mode-hint').textContent = compare
         ? '两期点云须已统一尺度、对齐坐标。支持 PLY、XYZ、TXT 和 CSV。'
-        : '用合成的降雨前后坡面运行一次分析。';
-      submitButton.textContent = isCompare() ? '提交点云分析' : '运行样例';
+        : photo
+          ? '上传雨前、雨后各一组多视角照片，服务器用 VGGT 重建后对比。'
+          : '用合成的降雨前后坡面运行一次分析。';
+      submitButton.textContent = compare ? '提交点云分析' : photo ? '提交照片重建' : '运行样例';
     }
     form.elements.mode.forEach(radio => radio.addEventListener('change', updateMode));
     const gridInput = form.elements.grid_step_mm;
@@ -203,11 +232,32 @@
         if (currentJob === jobId) get('download-error').textContent = error.message;
       } finally { button.disabled = false; }
     }
-    function showResult(result, jobId) {
+    async function showFigures(result, jobId) {
+      const box = get('figures');
+      box.replaceChildren();
+      for (const [name, caption] of figureSpecs) {
+        if (!result.files?.includes(name)) continue;
+        try {
+          const response = await api(jobPath(jobId) + '/files/' + encodeURIComponent(name));
+          const url = URL.createObjectURL(await response.blob());
+          const figure = document.createElement('figure');
+          const image = document.createElement('img');
+          image.src = url;
+          image.alt = caption;
+          const label = document.createElement('figcaption');
+          label.textContent = caption;
+          figure.append(image, label);
+          box.append(figure);
+          setTimeout(() => URL.revokeObjectURL(url), 60000);
+        } catch (error) { /* figures are optional; keep the metrics usable */ }
+      }
+    }
+    async function showResult(result, jobId) {
       const metrics = get('metrics');
       const downloads = get('downloads');
       metrics.replaceChildren();
       downloads.replaceChildren();
+      await showFigures(result, jobId);
       for (const [label, key, unit] of metricSpecs) {
         const value = result.metrics?.[key];
         if (!Number.isFinite(value)) continue;
@@ -260,6 +310,20 @@
         get('retry').hidden = false;
       }
     }
+    function photoForm() {
+      const before = form.elements.p_before.files[0];
+      const after = form.elements.p_after.files[0];
+      if (!before || !after) throw new Error('请选择雨前和雨后的照片 ZIP。');
+      const body = new FormData();
+      body.append('before_zip', before);
+      body.append('after_zip', after);
+      body.append('grid_step_mm', form.elements.p_grid.value || '2');
+      body.append('erosion_threshold_mm', form.elements.p_threshold.value || '3');
+      body.append('elapsed_hours', form.elements.p_elapsed.value || '1');
+      body.append('scale_mm_per_unit', form.elements.p_scale.value || '1');
+      body.append('max_views', form.elements.p_views.value || '8');
+      return body;
+    }
     form.addEventListener('submit', async event => {
       event.preventDefault();
       if (submitButton.disabled) return;
@@ -269,11 +333,25 @@
         return;
       }
       const compare = isCompare();
+      const photo = isPhoto();
       const options = {method:'POST'};
+      let endpoint = 'jobs/demo';
+      let pendingMessage = '正在提交样例…';
       if (compare) {
         const body = new FormData(form);
         body.delete('mode');
         options.body = body;
+        endpoint = 'jobs/compare';
+        pendingMessage = '正在上传两期点云…';
+      } else if (photo) {
+        try {
+          options.body = photoForm();
+        } catch (error) {
+          setStatus('参数不足', error.message, true);
+          return;
+        }
+        endpoint = 'jobs/photo-compare';
+        pendingMessage = '正在上传两期照片，VGGT 重建约需 1–3 分钟…';
       }
       currentJob = null;
       get('outcome').hidden = true;
@@ -282,9 +360,9 @@
       get('download-error').textContent = '';
       progress.hidden = true;
       setBusy(true);
-      setStatus('提交中', compare ? '正在上传两期点云…' : '正在提交样例…');
+      setStatus('提交中', pendingMessage);
       try {
-        const job = await (await api(compare ? 'jobs/compare' : 'jobs/demo', options)).json();
+        const job = await (await api(endpoint, options)).json();
         if (typeof job.job_id !== 'string' || !job.job_id) throw new Error('服务未返回任务 ID。');
         currentJob = job.job_id;
         get('job-id').textContent = currentJob;
