@@ -1,0 +1,37 @@
+{
+  "metadata": {
+    "source": "synthetic_demo",
+    "说明": "程序生成的降雨前后坡面，用于离线演示",
+    "soil": "示例土",
+    "rainfall_mm_h": 60
+  },
+  "metrics": {
+    "valid_area_m2": 0.024644,
+    "grid_step_mm": 2.0,
+    "valid_cells": 6161,
+    "erosion_volume_l": 0.013492,
+    "deposition_volume_l": 0.000181,
+    "erosion_volume_raw_l": 0.015081,
+    "deposition_volume_raw_l": 0.001797,
+    "max_erosion_depth_mm": 9.5,
+    "mean_erosion_depth_mm": 6.328,
+    "max_deposition_height_mm": 2.845,
+    "mean_deposition_height_mm": 2.664,
+    "changed_area_m2": 0.0022,
+    "max_abs_change_mm": 9.5,
+    "elapsed_hours": 0.5,
+    "max_change_rate_mm_per_hour": 19.0,
+    "erosion_threshold_mm": 2.5,
+    "gully_count_est": 1
+  },
+  "gullies": [
+    {
+      "id": 1,
+      "area_mm2": 2132.0,
+      "length_mm_est": 203.48,
+      "width_mm_est": 10.48,
+      "max_depth_mm": 9.5,
+      "mean_depth_mm": 6.33
+    }
+  ]
+}

@@ -14,6 +14,7 @@
 | [技术选型与框架清单](<docs/SlopeWatch_技术选型与框架清单.docx>) · [Markdown](docs/TECH_STACK.md) | 每个模块的框架、模型、版本、理由与替代 | 答辩 / 评审 |
 | [标注与微调指南](docs/annotation_guide.md) | 类别定义、画笔工具、微调、验收 | 做数据的人 |
 | [自监督与公开数据集](docs/WEAK_SUPERVISION.md) | 规则阈值、自训练、3 个 CC-BY 数据集 | 算法 / 数据 |
+| [演示手册](<docs/SlopeWatch_演示手册.docx>) · [指南](docs/DEMO_GUIDE.md) | 5 分钟分镜、60 秒电梯版、故障兜底、必答题 | 答辩 / 演示 |
 | [示例报告](docs/example_report.pdf) | 一次任务的 PDF 产出 | 评委 |
 
 ## 仓库结构
@@ -35,6 +36,7 @@ data/                运行数据（本地，未入库）
 
 ```powershell
 python -m pip install -r requirements.txt
+python scripts/run_demo.py --mode quick        # 2 秒离线演示（不需要 GPU/网络）
 # VGGT 代码与权重（只需一次）
 git clone https://github.com/facebookresearch/vggt.git
 python -m pip install -e .\vggt

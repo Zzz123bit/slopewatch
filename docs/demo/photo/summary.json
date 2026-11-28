@@ -1,0 +1,115 @@
+{
+  "title": "照片双时相对比演示",
+  "job_id": "89635f1c-60d4-4f78-927b-61271ac44006",
+  "scene": "D:\\tzzcup\\data\\samples\\synthetic_sem",
+  "metrics": {
+    "valid_area_m2": 0.184646,
+    "grid_step_mm": 1.5,
+    "valid_cells": 82065,
+    "erosion_volume_l": 0.354479,
+    "deposition_volume_l": 0.250405,
+    "erosion_volume_raw_l": 0.401418,
+    "deposition_volume_raw_l": 0.321155,
+    "max_erosion_depth_mm": 15.967,
+    "mean_erosion_depth_mm": 6.904,
+    "max_deposition_height_mm": 10.59,
+    "mean_deposition_height_mm": 5.041,
+    "changed_area_m2": 0.10102,
+    "max_abs_change_mm": 15.967,
+    "elapsed_hours": 1.0,
+    "max_change_rate_mm_per_hour": 15.967,
+    "erosion_threshold_mm": 3.0,
+    "gully_count_est": 20
+  },
+  "semantic": {
+    "source": "model",
+    "detail": "五类语义分割 + 多视投票投影",
+    "coverage": {
+      "classified_cells": 65236,
+      "valid_cells": 82065,
+      "classified_fraction": 0.7949308474989337
+    },
+    "classes": {
+      "other": {
+        "cells": 40663,
+        "area_mm2": 91491.75,
+        "eroded_area_mm2": 24617.25,
+        "deposited_area_mm2": 23204.25,
+        "erosion_volume_l": 0.1546628695475802,
+        "deposition_volume_l": 0.11680022978324563,
+        "max_erosion_depth_mm": 15.967408781416452,
+        "max_deposition_height_mm": 8.982411133977848
+      },
+      "gully": {
+        "cells": 6773,
+        "area_mm2": 15239.25,
+        "eroded_area_mm2": 470.25,
+        "deposited_area_mm2": 4455.0,
+        "erosion_volume_l": 0.001974123156012706,
+        "deposition_volume_l": 0.02062104427392973,
+        "max_erosion_depth_mm": 11.564668483342302,
+        "max_deposition_height_mm": 7.655415021171393
+      },
+      "collapse_candidate": {
+        "cells": 4880,
+        "area_mm2": 10980.0,
+        "eroded_area_mm2": 1327.5,
+        "deposited_area_mm2": 6916.5,
+        "erosion_volume_l": 0.009059814508943867,
+        "deposition_volume_l": 0.03968225024259831,
+        "max_erosion_depth_mm": 13.66172099845744,
+        "max_deposition_height_mm": 10.589627708988019
+      },
+      "protection": {
+        "cells": 5207,
+        "area_mm2": 11715.75,
+        "eroded_area_mm2": 11133.0,
+        "deposited_area_mm2": 148.5,
+        "erosion_volume_l": 0.08796089301091022,
+        "deposition_volume_l": 0.0007828352232211512,
+        "max_erosion_depth_mm": 12.164811126202835,
+        "max_deposition_height_mm": 7.156374078521139
+      },
+      "unprotected_reference": {
+        "cells": 7713,
+        "area_mm2": 17354.25,
+        "eroded_area_mm2": 7524.0,
+        "deposited_area_mm2": 1617.75,
+        "erosion_volume_l": 0.06156737446031658,
+        "deposition_volume_l": 0.006776093993282471,
+        "max_erosion_depth_mm": 15.70657090608995,
+        "max_deposition_height_mm": 7.952461218729127
+      },
+      "unclassified": {
+        "cells": 16829,
+        "area_mm2": 37865.25,
+        "eroded_area_mm2": 6275.25,
+        "deposited_area_mm2": 13331.25,
+        "erosion_volume_l": 0.03925422548141732,
+        "deposition_volume_l": 0.06574230589357989,
+        "max_erosion_depth_mm": 14.390519213256653,
+        "max_deposition_height_mm": 10.051063824851099
+      }
+    }
+  },
+  "weak_labels": {
+    "valid_cells": 82065,
+    "eroded_cells": 15723,
+    "gully_cells": 14304,
+    "collapse_cells": 0,
+    "unknown_cells": 50639,
+    "gully_fraction_of_eroded": 0.91,
+    "regions": 177,
+    "rules": {
+      "min_depth_mm": 5.0,
+      "gully_min_length_mm": 100.0,
+      "gully_max_width_mm": 400.0,
+      "gully_min_aspect": 3.0,
+      "collapse_min_area_mm2": 400.0,
+      "collapse_max_aspect": 2.5,
+      "collapse_min_depth_mm": 10.0,
+      "deposition_adjacency_mm": 40.0
+    }
+  },
+  "seconds": 131.2
+}

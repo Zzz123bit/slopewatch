@@ -1,0 +1,191 @@
+{
+  "metadata": {
+    "source": "demo",
+    "scene": "synthetic_sem",
+    "重建方式": "VGGT-1B 多视角重建",
+    "相似变换配准": "尺度 0.7079，残差中位数 0.003 单位",
+    "尺度是否标定": "是",
+    "前后照片数": "8 / 8"
+  },
+  "metrics": {
+    "valid_area_m2": 0.184646,
+    "grid_step_mm": 1.5,
+    "valid_cells": 82065,
+    "erosion_volume_l": 0.354479,
+    "deposition_volume_l": 0.250405,
+    "erosion_volume_raw_l": 0.401418,
+    "deposition_volume_raw_l": 0.321155,
+    "max_erosion_depth_mm": 15.967,
+    "mean_erosion_depth_mm": 6.904,
+    "max_deposition_height_mm": 10.59,
+    "mean_deposition_height_mm": 5.041,
+    "changed_area_m2": 0.10102,
+    "max_abs_change_mm": 15.967,
+    "elapsed_hours": 1.0,
+    "max_change_rate_mm_per_hour": 15.967,
+    "erosion_threshold_mm": 3.0,
+    "gully_count_est": 20
+  },
+  "gullies": [
+    {
+      "id": 1,
+      "area_mm2": 24565.5,
+      "length_mm_est": 391.63,
+      "width_mm_est": 62.73,
+      "max_depth_mm": 15.71,
+      "mean_depth_mm": 7.55
+    },
+    {
+      "id": 65,
+      "area_mm2": 18722.25,
+      "length_mm_est": 371.43,
+      "width_mm_est": 50.41,
+      "max_depth_mm": 15.71,
+      "mean_depth_mm": 7.03
+    },
+    {
+      "id": 3,
+      "area_mm2": 441.0,
+      "length_mm_est": 61.25,
+      "width_mm_est": 7.2,
+      "max_depth_mm": 6.92,
+      "mean_depth_mm": 4.59
+    },
+    {
+      "id": 147,
+      "area_mm2": 391.5,
+      "length_mm_est": 53.0,
+      "width_mm_est": 7.39,
+      "max_depth_mm": 8.61,
+      "mean_depth_mm": 4.9
+    },
+    {
+      "id": 53,
+      "area_mm2": 148.5,
+      "length_mm_est": 22.47,
+      "width_mm_est": 6.61,
+      "max_depth_mm": 7.73,
+      "mean_depth_mm": 6.28
+    },
+    {
+      "id": 151,
+      "area_mm2": 135.0,
+      "length_mm_est": 30.13,
+      "width_mm_est": 4.48,
+      "max_depth_mm": 8.83,
+      "mean_depth_mm": 6.88
+    },
+    {
+      "id": 152,
+      "area_mm2": 90.0,
+      "length_mm_est": 20.05,
+      "width_mm_est": 4.49,
+      "max_depth_mm": 15.97,
+      "mean_depth_mm": 12.31
+    },
+    {
+      "id": 71,
+      "area_mm2": 87.75,
+      "length_mm_est": 18.97,
+      "width_mm_est": 4.63,
+      "max_depth_mm": 5.14,
+      "mean_depth_mm": 3.78
+    },
+    {
+      "id": 126,
+      "area_mm2": 87.75,
+      "length_mm_est": 17.08,
+      "width_mm_est": 5.14,
+      "max_depth_mm": 11.0,
+      "mean_depth_mm": 10.59
+    },
+    {
+      "id": 7,
+      "area_mm2": 83.25,
+      "length_mm_est": 19.68,
+      "width_mm_est": 4.23,
+      "max_depth_mm": 5.05,
+      "mean_depth_mm": 3.79
+    },
+    {
+      "id": 104,
+      "area_mm2": 83.25,
+      "length_mm_est": 16.94,
+      "width_mm_est": 4.91,
+      "max_depth_mm": 5.39,
+      "mean_depth_mm": 3.69
+    },
+    {
+      "id": 6,
+      "area_mm2": 69.75,
+      "length_mm_est": 14.27,
+      "width_mm_est": 4.89,
+      "max_depth_mm": 9.06,
+      "mean_depth_mm": 8.68
+    },
+    {
+      "id": 63,
+      "area_mm2": 63.0,
+      "length_mm_est": 16.79,
+      "width_mm_est": 3.75,
+      "max_depth_mm": 4.5,
+      "mean_depth_mm": 3.72
+    },
+    {
+      "id": 120,
+      "area_mm2": 63.0,
+      "length_mm_est": 13.8,
+      "width_mm_est": 4.57,
+      "max_depth_mm": 10.62,
+      "mean_depth_mm": 9.97
+    },
+    {
+      "id": 69,
+      "area_mm2": 54.0,
+      "length_mm_est": 13.38,
+      "width_mm_est": 4.04,
+      "max_depth_mm": 8.99,
+      "mean_depth_mm": 5.03
+    },
+    {
+      "id": 29,
+      "area_mm2": 51.75,
+      "length_mm_est": 14.91,
+      "width_mm_est": 3.47,
+      "max_depth_mm": 5.09,
+      "mean_depth_mm": 4.69
+    },
+    {
+      "id": 67,
+      "area_mm2": 49.5,
+      "length_mm_est": 13.83,
+      "width_mm_est": 3.58,
+      "max_depth_mm": 4.24,
+      "mean_depth_mm": 3.63
+    },
+    {
+      "id": 51,
+      "area_mm2": 47.25,
+      "length_mm_est": 9.92,
+      "width_mm_est": 4.76,
+      "max_depth_mm": 7.55,
+      "mean_depth_mm": 7.06
+    },
+    {
+      "id": 13,
+      "area_mm2": 45.0,
+      "length_mm_est": 10.94,
+      "width_mm_est": 4.11,
+      "max_depth_mm": 6.99,
+      "mean_depth_mm": 4.35
+    },
+    {
+      "id": 32,
+      "area_mm2": 42.75,
+      "length_mm_est": 10.85,
+      "width_mm_est": 3.94,
+      "max_depth_mm": 6.06,
+      "mean_depth_mm": 4.39
+    }
+  ]
+}

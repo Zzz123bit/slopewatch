@@ -1,0 +1,33 @@
+{
+  "title": "合成样例演示",
+  "metrics": {
+    "valid_area_m2": 0.024644,
+    "grid_step_mm": 2.0,
+    "valid_cells": 6161,
+    "erosion_volume_l": 0.013492,
+    "deposition_volume_l": 0.000181,
+    "erosion_volume_raw_l": 0.015081,
+    "deposition_volume_raw_l": 0.001797,
+    "max_erosion_depth_mm": 9.5,
+    "mean_erosion_depth_mm": 6.328,
+    "max_deposition_height_mm": 2.845,
+    "mean_deposition_height_mm": 2.664,
+    "changed_area_m2": 0.0022,
+    "max_abs_change_mm": 9.5,
+    "elapsed_hours": 0.5,
+    "max_change_rate_mm_per_hour": 19.0,
+    "erosion_threshold_mm": 2.5,
+    "gully_count_est": 1
+  },
+  "regions": 1,
+  "files": [
+    "atlas.png",
+    "change.csv",
+    "dod.png",
+    "fusion.json",
+    "metrics.json",
+    "report.pdf",
+    "surface.png"
+  ],
+  "seconds": 0.84
+}

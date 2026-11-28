@@ -29,7 +29,7 @@ def style_run(run, size=None, bold=None, color=None, mono=False):
         run.font.color.rgb = color
 
 
-def new_document():
+def new_document(footer_label="坡镜智安 SlopeWatch · 技术选型与框架清单"):
     document = Document()
     section = document.sections[0]
     section.page_width = Cm(21.0)
@@ -48,7 +48,7 @@ def new_document():
         style.element.rPr.rFonts.set(qn("w:eastAsia"), FONT)
         style.paragraph_format.space_before = Pt(0)
         style.paragraph_format.space_after = Pt(4)
-    add_page_number(document, "坡镜智安 SlopeWatch · 技术选型与框架清单")
+    add_page_number(document, footer_label)
     return document
 
 

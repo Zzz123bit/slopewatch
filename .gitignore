@@ -9,3 +9,4 @@ data/
 .streamlit/secrets.toml
 *.pem
 models/*.pt
+demo_output/
