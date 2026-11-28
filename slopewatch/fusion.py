@@ -33,16 +33,25 @@ RGB = {
 }
 NO_DATA_COLOR = (39, 48, 54)
 DEFAULT_SEGMENTATION_MODEL = Path(__file__).resolve().parents[1] / "models" / "segmentation.onnx"
+DEFAULT_SEGMENTATION_TORCH = Path(__file__).resolve().parents[1] / "models" / "segmentation.pt"
 
 
 def segmentation_status() -> dict:
-    """Report whether a five-class ONNX segmenter is available."""
+    """Report the active five-class segmenter backend."""
     configured = os.environ.get("SLOPEWATCH_SEGMENTATION_ONNX")
-    path = Path(configured) if configured else DEFAULT_SEGMENTATION_MODEL
-    if not path.is_file():
-        return {"available": False, "detail": f"未找到语义分割模型 {path.name}", "model": str(path)}
-    return {"available": True, "detail": "语义分割模型就绪", "model": str(path),
-            "size_mb": round(path.stat().st_size / 1e6, 2)}
+    onnx_path = Path(configured) if configured else DEFAULT_SEGMENTATION_MODEL
+    torch_path = Path(os.environ.get("SLOPEWATCH_SEGMENTATION_TORCH", DEFAULT_SEGMENTATION_TORCH))
+    prefer_torch = torch_path.is_file() and (
+        not onnx_path.is_file() or torch_path.stat().st_mtime > onnx_path.stat().st_mtime
+    )
+    if onnx_path.is_file() and not prefer_torch:
+        return {"available": True, "backend": "onnx", "detail": "语义分割模型就绪（ONNX）",
+                "model": str(onnx_path), "size_mb": round(onnx_path.stat().st_size / 1e6, 2)}
+    if torch_path.is_file():
+        return {"available": True, "backend": "torch", "detail": "语义分割模型就绪（PyTorch checkpoint）",
+                "model": str(torch_path), "size_mb": round(torch_path.stat().st_size / 1e6, 2)}
+    return {"available": False, "backend": None, "detail": f"未找到语义分割模型 {onnx_path.name}",
+            "model": str(onnx_path)}
 
 
 def _check_ids(labels: np.ndarray) -> np.ndarray:
@@ -63,26 +72,11 @@ def read_label_mask(path_or_bytes: Path | str | bytes, expected_size=None) -> np
         return _check_ids(np.array(image))
 
 
-def load_segmenter(model_path=None, *, input_size=None):
-    """Load one OpenCV DNN per job. Accepts a path or uint8 RGB image for prediction.
-
-    Models must accept 1x3xSxS RGB / 255 and output 1x5xHxW finite class logits
-    ordered by class ID. Resize the image isotropically, pad with black, then
-    bilinearly restore each logit channel before classification.
-    """
-    configured = os.environ.get("SLOPEWATCH_SEGMENTATION_ONNX")
-    model_path = model_path or configured
-    if model_path is None:
-        if not DEFAULT_SEGMENTATION_MODEL.is_file():
-            return None
-        model_path = DEFAULT_SEGMENTATION_MODEL
+def _load_onnx_segmenter(model_path: Path, side: int):
     import cv2
 
-    side = int(input_size or os.environ.get("SLOPEWATCH_SEGMENTATION_SIZE", "512"))
-    if not 16 <= side <= 2048:
-        raise ValueError("分割模型输入边长须在 16 至 2048 像素之间")
-    if not Path(model_path).is_file():
-        raise ValueError(f"找不到配置的 ONNX 分割模型 {Path(model_path).name}")
+    if not model_path.is_file():
+        raise ValueError(f"找不到配置的 ONNX 分割模型 {model_path.name}")
     net = cv2.dnn.readNetFromONNX(str(model_path))
 
     def predict(image) -> np.ndarray:
@@ -97,23 +91,56 @@ def load_segmenter(model_path=None, *, input_size=None):
         w, h = max(1, round(width * scale)), max(1, round(height * scale))
         left, top = (side - w) // 2, (side - h) // 2
         padded = np.zeros((side, side, 3), dtype=np.uint8)
-        padded[top:top+h, left:left+w] = cv2.resize(image, (w, h))
+        padded[top:top + h, left:left + w] = cv2.resize(image, (w, h))
         net.setInput(cv2.dnn.blobFromImage(padded, scalefactor=1 / 255.0, swapRB=False))
         output = net.forward()
         if (output.ndim != 4 or tuple(output.shape[:2]) != (1, 5)
                 or not np.isfinite(output).all()):
             raise ValueError("ONNX 分割输出必须是有限的 1×5×H×W 类别分数")
-        # Keep just the winning score and label at native resolution.
         prediction = np.zeros((height, width), dtype=np.uint8)
         best = np.full((height, width), -np.inf, dtype=np.float32)
         for class_id, logits in enumerate(output[0]):
-            unpadded = cv2.resize(logits, (side, side))[top:top+h, left:left+w]
+            unpadded = cv2.resize(logits, (side, side))[top:top + h, left:left + w]
             scores = cv2.resize(unpadded, (width, height))
             improved = scores > best
             prediction[improved] = class_id
             np.maximum(scores, best, out=best)
         return prediction
 
+    return predict
+
+
+def load_segmenter(model_path=None, *, input_size=None):
+    """Load the bundled ONNX model, falling back to the fine-tunable PyTorch one.
+
+    ONNX is preferred for deployment; when it is missing or broken (for example
+    after a fine-tuning round that has not been exported yet) the .pt checkpoint
+    in ``models/segmentation.pt`` is used instead.
+    """
+    configured = os.environ.get("SLOPEWATCH_SEGMENTATION_ONNX")
+    candidate = Path(model_path or configured or DEFAULT_SEGMENTATION_MODEL)
+    side = int(input_size or os.environ.get("SLOPEWATCH_SEGMENTATION_SIZE", "256"))
+    if not 16 <= side <= 2048:
+        raise ValueError("分割模型输入边长须在 16 至 2048 像素之间")
+    torch_path = Path(os.environ.get("SLOPEWATCH_SEGMENTATION_TORCH", DEFAULT_SEGMENTATION_TORCH))
+    # A freshly fine-tuned checkpoint must win over the older bundled ONNX file.
+    prefer_torch = torch_path.is_file() and (
+        not candidate.is_file() or torch_path.stat().st_mtime > candidate.stat().st_mtime
+    )
+    if candidate.is_file() and not prefer_torch:
+        try:
+            return _load_onnx_segmenter(candidate, side)
+        except Exception:  # noqa: BLE001 - fall back to the torch checkpoint
+            if model_path or configured:
+                raise
+    if torch_path.is_file():
+        from .segnet import TorchSegmenter
+
+        try:
+            return TorchSegmenter(torch_path)
+        except Exception:  # noqa: BLE001 - a broken checkpoint means no segmenter
+            return None
+    return None
     return predict
 
 

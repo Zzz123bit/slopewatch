@@ -161,6 +161,18 @@ $env:SLOPEWATCH_VGGT_CHECKPOINT = "D:\models\VGGT-1B\model.safetensors"
 
 健康检查 `GET /api/v1/health` 的 `segmentation` 字段会报告模型是否就绪。
 
+### 用真实照片微调
+
+合成数据只用于打通链路。正式试验前，用你自己的照片标 100–200 张做微调：
+
+```powershell
+python scripts/preannotate.py --images data\real_photos --masks data\real_masks     # 模型预标注
+python scripts/annotate.py    --images data\real_photos --masks data\real_masks     # 人工修正
+python scripts/finetune_segmentation.py --images data\real_photos --masks data\real_masks --epochs 20
+```
+
+类别定义、标注技巧、验收标准与常见问题见 **[docs/annotation_guide.md](docs/annotation_guide.md)**。微调后运行时会自动优先使用更新时间较新的 `models/segmentation.pt`，`/health` 的 `segmentation.backend` 会显示 `torch`；也可以改用 LabelMe 画多边形后运行 `scripts/labelme_to_masks.py` 转换。
+
 ### 运行参数
 
 | 环境变量 | 默认 | 说明 |
