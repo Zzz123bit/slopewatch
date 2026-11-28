@@ -51,6 +51,15 @@ def _albedo(x, y, rng):
     broad = 0.06 * np.sin(6.0 * x) * np.cos(4.5 * y) + 0.04 * np.sin(11.0 * y + 1.0)
     speckle = (rng.random(x.shape) < 0.05).astype(np.float32) * 0.16
     base = np.stack([0.55 + grain + broad, 0.45 + grain + broad, 0.33 + grain + broad], axis=-1)
+    mat = (x > -0.45) & (x < -0.25)
+    if mat.any():
+        grid = ((np.sin(80 * x) > 0.6) | (np.sin(80 * y) > 0.6)).astype(np.float32) * 0.12
+        base[mat] = np.stack([0.22 + grid[mat], 0.42 + grid[mat], 0.28 + grid[mat]], axis=-1)
+    reference = (x > -0.21) & (x < -0.02)
+    if reference.any():
+        base[reference] = np.stack([0.62 + grain[reference], 0.50 + grain[reference], 0.36 + grain[reference]], axis=-1)
+        frame = reference & ((x < -0.198) | (x > -0.032))
+        base[frame] = np.array([0.88, 0.88, 0.84])
     return np.clip(base - speckle[..., None], 0.05, 0.95)
 
 
@@ -73,11 +82,17 @@ def _render(points, colours, rotation, eye, focal=FOCAL):
     inside = (u >= 0) & (u < WIDTH) & (v >= 0) & (v < HEIGHT)
     u, v, colours, depth = u[inside], v[inside], colours[inside], depth[inside]
 
-    order = np.argsort(-depth)  # far to near, nearest wins
-    image = np.full((HEIGHT, WIDTH, 3), 0.93, dtype=np.float32)
-    image[v[order], u[order]] = colours[order]
+    us = np.concatenate([u + dx for dx in (-1, 0, 1)])
+    vs = np.concatenate([v + dy for dy in (-1, 0, 1)])
+    cs = np.concatenate([colours] * 3)
+    ds = np.concatenate([depth] * 3)
+    ok = (us >= 0) & (us < WIDTH) & (vs >= 0) & (vs < HEIGHT)
+    us, vs, cs, ds = us[ok], vs[ok], cs[ok], ds[ok]
+    order = np.argsort(-ds)  # far to near, nearest wins
+    image = np.full((HEIGHT, WIDTH, 3), float(np.median(cs.min(axis=0))), dtype=np.float32)
+    image[vs[order], us[order]] = cs[order]
     covered = np.zeros((HEIGHT, WIDTH), dtype=np.uint8)
-    covered[v, u] = 255
+    covered[vs, us] = 255
 
     holes = cv2.bitwise_not(cv2.dilate(covered, np.ones((3, 3), np.uint8)))
     rgb = cv2.inpaint((image * 255).astype(np.uint8), holes, 4, cv2.INPAINT_TELEA)
