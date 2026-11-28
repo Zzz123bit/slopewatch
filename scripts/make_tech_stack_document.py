@@ -79,6 +79,7 @@ def build():
             ["13", "标注", "OpenCV HighGUI + LabelMe 兼容", "opencv 4.10.0", "画笔标注与多边形转换"],
             ["14", "合成数据", "自研渲染（NumPy 泼溅 + OpenCV）", "numpy / opencv", "训练与测试数据"],
             ["15", "测试与部署", "pytest / Cloudflare Tunnel / Git", "7.4.4", "回归测试、公网演示、版本管理"],
+            ["16", "语义数据", "规则自监督 + 公开数据集", "v1.0 / CC-BY-4.0", "自动生成冲沟/坍塌标签；滑坡数据预训练"],
         ],
         [0.9, 2.4, 5.4, 3.6, 4.6],
         font_size=8.5,
@@ -218,12 +219,43 @@ def build():
 
     module(
         document, "3.14 测试与部署：pytest + Cloudflare Tunnel + Git",
-        [("采用", "pytest 覆盖核心、配准、报告、接口、分割与任务共 28 个用例；"
+        [("采用", "pytest 覆盖核心、配准、报告、接口、分割、规则标签与任务共 31 个用例；"
                   "Cloudflare Tunnel 把本机 8011 端口映射为 HTTPS 公网地址；Git/GitHub 管理代码。"),
          ("入口", "tests/、scripts/start-public.ps1、scripts/copy-demo-token.ps1")],
         "无公网 IP、无需改路由器即可让评委用手机访问；测试保证迭代不破坏既有链路。",
         "隧道地址每次可能变化（临时隧道），正式比赛建议用命名隧道 + 固定域名；"
         "公网暴露需配合强随机令牌与限流。",
+    )
+
+    module(
+        document, "3.15 语义数据来源：规则自监督 + 公开数据集",
+        [("采用", "① 规则自监督：由 DoD 的形态判据自动生成冲沟/坍塌标签（slopewatch/weak_labels.py），"
+                  "按 VGGT 预处理几何投影回各视角照片，得到“图 + 掩膜”训练集（scripts/self_train_segmentation.py）；"
+                  "② 公开数据集：Zenodo 的 Nepal / Italy / Japan 滑坡分割集（CC-BY-4.0，共 440 对图-掩膜，"
+                  "scripts/prepare_external_datasets.py 统一整理）。"),
+         ("入口", "slopewatch/weak_labels.py、scripts/self_train_segmentation.py、"
+                  "scripts/prepare_external_datasets.py、docs/WEAK_SUPERVISION.md")],
+        "冲沟与坍塌本质是地表形态变化，DoD 是直接测出的几何量，比从二维纹理猜测可靠；"
+        "规则口径来自 SL 190-2007、GB/T 20465-2006 与 USDA-NRCS 的 rill/gully 定义，可解释、可调参；"
+        "规则标签能在没有人工标注时把训练集从 0 扩到数百张，公开数据则补足“滑坡/背景”的预训练能力。",
+        "防护垫、对照区属于材料与试验设计信息，规则无法生成，仍需人工标注；"
+        "阈值依赖相机距离与重建精度，换场景要重新标定；自训练会放大规则的系统偏差，必须保留人工抽查；"
+        "公开数据是卫星二分类，与本项目五类、手机近景存在域差距，只用于预训练或外部评测。",
+    )
+    heading(document, "3.15.1 三类语义数据的分工", 2)
+    table(
+        document,
+        ["来源", "规模", "可覆盖类别", "用途", "许可"],
+        [
+            ["规则自监督", "随场景数扩展（每场景数十张）", "其他 / 冲沟 / 坍塌",
+             "冷启动、批量训练集", "自有"],
+            ["人工标注", "100–200 张（建议）", "五类全覆盖（含防护/对照）",
+             "修正规则错误、补材料类", "自有"],
+            ["公开数据集", "440 对（Nepal 230 / Italy 104 / Japan 106）", "滑坡 / 背景",
+             "预训练、外部评测", "CC-BY-4.0（需署名 DOI）"],
+        ],
+        [3.0, 4.6, 4.4, 3.8, 3.2],
+        font_size=8.6,
     )
 
     # ---------------- 3 依赖版本 ----------------
@@ -334,7 +366,9 @@ def build():
             ["标注", "scripts/annotate.py、preannotate.py、labelme_to_masks.py", "画笔、预标注、格式转换"],
             ["训练", "scripts/train_segmentation.py、finetune_segmentation.py", "从零训练与真实数据微调"],
             ["合成数据", "scripts/make_synthetic_photos.py、make_segmentation_dataset.py", "重建测试集与分割训练集"],
-            ["测试", "tests/（7 个文件，28 个用例）", "核心、配准、报告、接口、任务、分割"],
+            ["弱监督数据", "slopewatch/weak_labels.py、scripts/self_train_segmentation.py", "规则标签、投影、自训练集"],
+            ["公开数据", "scripts/prepare_external_datasets.py", "Zenodo 滑坡数据集整理与清单"],
+            ["测试", "tests/（8 个文件，31 个用例）", "核心、配准、报告、接口、任务、分割、规则标签"],
         ],
         [2.6, 7.6, 6.4],
         font_size=8.6,
@@ -345,8 +379,10 @@ def build():
     body(document, "这套技术栈的核心取舍是“轻、可离线、可替换”：重建用 VGGT 换取免标定与速度，"
                    "配准与量化用自研 NumPy/SciPy 代码换取可控与零重依赖，语义用小型 U-Net + ONNX 换取部署简单，"
                    "服务端用 FastAPI 换取开发效率。")
-    body(document, "两个需要长期跟进的点：一是 VGGT 的许可与权重版本（商用必须换 Commercial 权重）；"
-                   "二是语义模型的数据来源（合成数据只能打通链路，真实场景必须用自己的照片微调）。", bold=False)
+    body(document, "三个需要长期跟进的点：一是 VGGT 的许可与权重版本（商用必须换 Commercial 权重）；"
+                   "二是语义模型的数据来源——合成数据只打通链路，真实场景要么用现场照片微调，"
+                   "要么用规则自监督批量生成再配少量人工修正；三是规则阈值与公开数据的域差距，换场景或换数据源都要重新评估。",
+         bold=False)
     body(document, "本文档与代码同步维护；涉及版本升级时，请同时更新第三节的版本号与第四节依赖表。", size=9, color=MUTED)
 
     document.save(str(OUT))

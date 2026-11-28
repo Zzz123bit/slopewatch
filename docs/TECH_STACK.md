@@ -21,6 +21,7 @@
 | 12 | 报告 | ReportLab | 4.5 | 中文 PDF 报告 |
 | 13 | 标注 | OpenCV HighGUI + LabelMe 兼容 | opencv 4.10 | 画笔标注与格式转换 |
 | 14 | 合成数据 | 自研渲染（NumPy 泼溅 + OpenCV） | — | 训练与测试数据 |
+| 16 | 语义数据 | 规则自监督 + 公开数据集 | v1.0 / CC-BY-4.0 | 自动标签与滑坡预训练 |
 | 15 | 测试与部署 | pytest / Cloudflare Tunnel / Git | 7.4 | 回归测试、公网演示、版本管理 |
 
 ## 二、逐模块选型说明
@@ -117,10 +118,23 @@
 
 ### 2.14 测试与部署：pytest + Cloudflare Tunnel + Git
 
-- **采用**：pytest 28 个用例；Cloudflare Tunnel 映射本机 8011 为 HTTPS；Git/GitHub 管理。
+- **采用**：pytest 31 个用例；Cloudflare Tunnel 映射本机 8011 为 HTTPS；Git/GitHub 管理。
 - **入口**：`tests/`、`scripts/start-public.ps1`、`scripts/copy-demo-token.ps1`。
 - **理由**：无公网 IP 即可手机访问；测试保证迭代不破坏链路。
 - **限制**：临时隧道地址会变，正式比赛用命名隧道；公网需强令牌与限流。
+
+### 2.15 语义数据来源：规则自监督 + 公开数据集
+
+- **采用**：① 规则自监督——由 DoD 的形态判据自动生成冲沟/坍塌标签（`slopewatch/weak_labels.py`），按 VGGT 预处理几何投影回各视角照片，得到“图 + 掩膜”训练集（`scripts/self_train_segmentation.py`）；② 公开数据集——Zenodo 的 Nepal / Italy / Japan 滑坡分割集（CC-BY-4.0，共 440 对），由 `scripts/prepare_external_datasets.py` 统一整理。
+- **入口**：`slopewatch/weak_labels.py`、`scripts/self_train_segmentation.py`、`scripts/prepare_external_datasets.py`、`docs/WEAK_SUPERVISION.md`。
+- **理由**：冲沟与坍塌本质是地表形态变化，DoD 是直接测出的几何量，比二维纹理可靠；规则口径来自 SL 190-2007、GB/T 20465-2006 与 USDA-NRCS，可解释可调参；规则标签能在零人工标注时把训练集扩到数百张，公开数据补足“滑坡/背景”预训练。
+- **限制**：防护垫、对照区属于材料与试验设计信息，规则无法生成，仍需人工；阈值随相机距离/重建精度变化；自训练会放大系统偏差，必须人工抽查；公开数据是卫星二分类，只用于预训练或外部评测。
+
+| 来源 | 规模 | 可覆盖类别 | 用途 | 许可 |
+|---|---|---|---|---|
+| 规则自监督 | 随场景数扩展 | 其他 / 冲沟 / 坍塌 | 冷启动、批量训练集 | 自有 |
+| 人工标注 | 100–200 张 | 五类全覆盖 | 修正规则错误、补材料类 | 自有 |
+| 公开数据集 | 440 对 | 滑坡 / 背景 | 预训练、外部评测 | CC-BY-4.0（需署名 DOI） |
 
 ## 三、依赖与版本
 
@@ -201,12 +215,15 @@
 | 标注 | `scripts/annotate.py`、`preannotate.py`、`labelme_to_masks.py` |
 | 训练 | `scripts/train_segmentation.py`、`finetune_segmentation.py` |
 | 合成数据 | `scripts/make_synthetic_photos.py`、`make_segmentation_dataset.py` |
-| 测试 | `tests/`（28 个用例） |
+| 弱监督数据 | `slopewatch/weak_labels.py`、`scripts/self_train_segmentation.py` |
+| 公开数据 | `scripts/prepare_external_datasets.py` |
+| 测试 | `tests/`（31 个用例） |
 
 ## 八、结论
 
 取舍原则是“轻、可离线、可替换”：VGGT 换免标定与速度，配准/量化用 NumPy+SciPy 换可控与零重依赖，
 小型 U-Net + ONNX 换部署简单，FastAPI 换开发效率。
 
-需要长期跟进两点：**VGGT 的许可与权重版本**（商用必须换 Commercial）、**语义模型的数据来源**
-（合成数据只打通链路，真实场景必须用现场照片微调）。
+需要长期跟进三点：**VGGT 的许可与权重版本**（商用必须换 Commercial）、**语义模型的数据来源**
+（合成数据只打通链路；真实场景要么用现场照片微调，要么用规则自监督批量生成再配少量人工修正）、
+**规则阈值与公开数据的域差距**（换场景或换数据源都要重新评估）。
